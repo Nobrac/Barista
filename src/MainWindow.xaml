@@ -1,0 +1,75 @@
+<Window x:Class="Barista.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Barista" Height="760" Width="980"
+        MinHeight="640" MinWidth="880"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource Paper}">
+
+  <Grid>
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="232"/>
+      <ColumnDefinition Width="*"/>
+    </Grid.ColumnDefinitions>
+
+    <!-- Step rail -->
+    <Border Grid.Column="0" Background="#E3DED4" BorderBrush="{StaticResource Line}"
+            BorderThickness="0,0,1,0">
+      <StackPanel Margin="20,24">
+        <TextBlock Text="the admin café" FontSize="15" FontWeight="SemiBold"
+                   Foreground="{StaticResource Coffee}"/>
+        <TextBlock Text="Barista" FontSize="12" Foreground="{StaticResource Muted}"
+                   Margin="0,2,0,26"/>
+        <ItemsControl x:Name="StepRail">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Grid Margin="0,0,0,14">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="26"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Ellipse Grid.Column="0" Width="9" Height="9"
+                         HorizontalAlignment="Left" VerticalAlignment="Center"
+                         Fill="{Binding Dot}"/>
+                <TextBlock Grid.Column="1" Text="{Binding Label}"
+                           FontWeight="{Binding Weight}"
+                           Foreground="{Binding Colour}"/>
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <Border Background="#D8D1C5" CornerRadius="6" Padding="12" Margin="0,24,0,0">
+          <TextBlock FontSize="11.5" Foreground="{StaticResource Muted}"
+                     Text="Throwaway VM only. Snapshot before every reboot."/>
+        </Border>
+      </StackPanel>
+    </Border>
+
+    <!-- Page body -->
+    <Grid Grid.Column="1">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="*"/>
+        <RowDefinition Height="Auto"/>
+      </Grid.RowDefinitions>
+
+      <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" Padding="32,28,32,12">
+        <ContentControl x:Name="PageHost"/>
+      </ScrollViewer>
+
+      <Border Grid.Row="1" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0"
+              Background="{StaticResource Paper}" Padding="32,14">
+        <Grid>
+          <TextBlock x:Name="FooterNote" VerticalAlignment="Center"
+                     Foreground="{StaticResource Muted}" FontSize="12"
+                     HorizontalAlignment="Left" MaxWidth="460"/>
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button x:Name="BackButton" Content="Back" Click="OnBack" Margin="0,0,10,0"/>
+            <Button x:Name="NextButton" Content="Continue" Click="OnNext"
+                    Style="{StaticResource PrimaryButton}"/>
+          </StackPanel>
+        </Grid>
+      </Border>
+    </Grid>
+  </Grid>
+</Window>

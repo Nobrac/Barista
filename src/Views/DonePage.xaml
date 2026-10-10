@@ -1,0 +1,72 @@
+<UserControl x:Class="Barista.Views.DonePage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <StackPanel>
+    <TextBlock Style="{StaticResource H1}" Text="Installed. Now the careful part."/>
+
+    <Border x:Name="RebootCard" Style="{StaticResource CardBorder}"
+            Background="#EDF4EF" BorderBrush="{StaticResource Good}">
+      <StackPanel>
+        <TextBlock FontWeight="SemiBold" Foreground="{StaticResource Good}"
+                   Text="Every stage ran, and the machine came back after each one"/>
+        <TextBlock Margin="0,6,0,0" MaxWidth="640">
+          Each stage that registers something LSA reads at boot got its own restart, and you
+          confirmed the machine was healthy before the next one went in. Whatever is installed
+          is loaded now.
+        </TextBlock>
+      </StackPanel>
+    </Border>
+
+    <Border Style="{StaticResource CardBorder}">
+      <StackPanel>
+        <TextBlock FontWeight="SemiBold" Text="Loaded is not the same as called"/>
+        <TextBlock Margin="0,6,0,0" MaxWidth="640">
+          Microsoft documents the Auth0 filter slot for domain controllers. Whether MSV1_0 calls
+          it for local accounts on a workstation is the open question from Part 2, and nothing in
+          this installer can answer it. Attach a kernel debugger, make a network logon for an
+          enrolled account, and watch for:
+        </TextBlock>
+        <TextBlock Margin="0,10,0,0" FontFamily="Consolas" FontSize="12"
+                   Foreground="{StaticResource Muted}"><Run Text="[Doppio-SubAuth] ..."/><LineBreak/><Run Text="[Ristretto] ..."/></TextBlock>
+        <TextBlock Margin="0,10,0,0" MaxWidth="640" Foreground="{StaticResource Muted}">
+          No lines means the filter is loaded and never asked. Everything it was supposed to
+          enforce is then not enforced, and only the deny rights are doing anything.
+        </TextBlock>
+      </StackPanel>
+    </Border>
+
+    <Border x:Name="GateCard" Style="{StaticResource CardBorder}" Visibility="Collapsed">
+      <StackPanel>
+        <TextBlock FontWeight="SemiBold" Text="Using the gate"/>
+        <TextBlock Margin="0,6,0,10" MaxWidth="640">
+          From an elevated prompt on this machine, next to TacProvider.dll:
+        </TextBlock>
+        <TextBlock FontFamily="Consolas" FontSize="12" Foreground="{StaticResource Muted}"><Run Text="ristretto alice            open the gate (asks for a code)"/><LineBreak/><Run Text="ristretto /status alice    how long is left"/><LineBreak/><Run Text="ristretto /close alice     close it now"/><LineBreak/><Run Text="ristretto /mode off        kill switch, no reboot"/></TextBlock>
+        <TextBlock Margin="0,10,0,0" MaxWidth="640" Foreground="{StaticResource Muted}">
+          While a gate is open, anyone who can authenticate as that account gets in — not only
+          the person who opened it. Close it when you are done.
+        </TextBlock>
+      </StackPanel>
+    </Border>
+
+    <Border Style="{StaticResource CardBorder}" Background="{StaticResource DangerBg}"
+            BorderBrush="{StaticResource Danger}">
+      <StackPanel>
+        <TextBlock FontWeight="SemiBold" Foreground="{StaticResource Danger}"
+                   Text="When you are finished with this VM"/>
+        <TextBlock Margin="0,6,0,12" MaxWidth="640">
+          Put RunAsPPL back to 1 and reboot. Leaving lsass unprotected is the one change here
+          that keeps costing you something after the experiment is over.
+        </TextBlock>
+        <StackPanel Orientation="Horizontal">
+          <Button x:Name="PplButton" Content="Turn RunAsPPL back on" Click="OnRestorePpl"
+                  Margin="0,0,10,0"/>
+          <Button Content="Uninstall everything" Style="{StaticResource DangerButton}"
+                  Click="OnUninstall"/>
+        </StackPanel>
+        <TextBlock x:Name="UninstallLog" Margin="0,12,0,0" FontFamily="Consolas" FontSize="11.5"
+                   Foreground="{StaticResource Muted}" Visibility="Collapsed"/>
+      </StackPanel>
+    </Border>
+  </StackPanel>
+</UserControl>

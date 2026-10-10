@@ -1,0 +1,77 @@
+<UserControl x:Class="Barista.Views.RiskPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <StackPanel>
+    <TextBlock Style="{StaticResource H1}" Text="Before anything else"/>
+    <TextBlock Style="{StaticResource Lede}">
+      This installs code that runs inside lsass.exe, the process that handles every logon on
+      this machine. Read these three before you tick them. They are not boilerplate.
+    </TextBlock>
+
+    <Border Style="{StaticResource CardBorder}" Background="{StaticResource DangerBg}"
+            BorderBrush="{StaticResource Danger}">
+      <StackPanel>
+        <TextBlock FontWeight="SemiBold" Foreground="{StaticResource Danger}"
+                   Text="A fault in this code is a bluescreen, not an error message."/>
+        <TextBlock Margin="0,6,0,0" Foreground="{StaticResource Ink}">
+          The sub-authentication filter and the authentication package are unsigned DLLs that
+          Windows loads into lsass at boot. If one of them faults, lsass dies, and a dead lsass
+          on the logon path can mean a machine that does not come back up. Safe Mode does not
+          help. You would need install media and an offline registry edit.
+        </TextBlock>
+      </StackPanel>
+    </Border>
+
+    <Border Style="{StaticResource CardBorder}" Background="{StaticResource WarnBg}"
+            BorderBrush="{StaticResource Warning}">
+      <StackPanel>
+        <TextBlock FontWeight="SemiBold" Foreground="{StaticResource Warning}"
+                   Text="Turning RunAsPPL off makes this machine easier to attack."/>
+        <TextBlock Margin="0,6,0,0" Foreground="{StaticResource Ink}">
+          The LSA components only load if lsass is not a protected process. RunAsPPL is the
+          protection that stops credential-dumping tools reading passwords out of lsass memory.
+          Switching it off to load an unsigned 2FA filter trades a strong, broadly effective
+          mitigation for a narrow one. On a machine that matters, that trade is probably a net
+          loss. This is why everything here is throwaway-VM code until the DLLs are signed.
+        </TextBlock>
+      </StackPanel>
+    </Border>
+
+    <TextBlock FontWeight="SemiBold" Margin="0,8,0,12" Text="Tick each one only if it is true:"/>
+
+    <CheckBox x:Name="ChkThrowaway" Checked="OnChanged" Unchecked="OnChanged">
+      <TextBlock MaxWidth="620">
+        This is a virtual machine, or a machine I can lose. It holds no data and no credentials
+        I would miss, and nothing depends on it staying up.
+      </TextBlock>
+    </CheckBox>
+
+    <CheckBox x:Name="ChkSnapshot" Checked="OnChanged" Unchecked="OnChanged">
+      <TextBlock MaxWidth="620">
+        I have taken a snapshot just now, and I will take one before every reboot that follows —
+        not just the first.
+      </TextBlock>
+    </CheckBox>
+
+    <CheckBox x:Name="ChkRecovery" Checked="OnChanged" Unchecked="OnChanged">
+      <TextBlock MaxWidth="620">
+        I have the BitLocker recovery key if this machine is encrypted, and I know how to boot
+        WinRE and edit the offline SYSTEM hive. I have done it before, or I have the commands
+        written down somewhere other than on this machine.
+      </TextBlock>
+    </CheckBox>
+
+    <Border Style="{StaticResource CardBorder}" Margin="0,10,0,0">
+      <StackPanel>
+        <TextBlock FontWeight="SemiBold" Text="If it does not boot"/>
+        <TextBlock Margin="0,6,0,0" FontFamily="Consolas" FontSize="12"
+                   Foreground="{StaticResource Muted}"><Run Text="reg load HKLM\OFF C:\Windows\System32\config\SYSTEM"/><LineBreak/><Run Text="reg delete HKLM\OFF\ControlSet001\Control\Lsa\MSV1_0 /v Auth0 /f"/><LineBreak/><Run Text="reg unload HKLM\OFF"/></TextBlock>
+        <TextBlock Margin="0,8,0,0" Foreground="{StaticResource Muted}">
+          Run from a command prompt in WinRE. For the authentication package, edit the
+          "Authentication Packages" value under ...\Control\Lsa instead and leave msv1_0 in it.
+          Restoring the snapshot is faster, which is why it is the second checkbox.
+        </TextBlock>
+      </StackPanel>
+    </Border>
+  </StackPanel>
+</UserControl>

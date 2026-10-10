@@ -1,0 +1,73 @@
+<UserControl x:Class="Barista.Views.EnrollPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <StackPanel>
+    <TextBlock Style="{StaticResource H1}" Text="Which accounts get a second factor?"/>
+    <TextBlock Style="{StaticResource Lede}">
+      Enrollment itself runs in enroll.exe, in its own console window. This tool does not
+      generate or store secrets — that stays in one place, where it has been reviewed.
+    </TextBlock>
+
+    <Border Style="{StaticResource CardBorder}">
+      <StackPanel>
+        <TextBlock FontWeight="SemiBold" Margin="0,0,0,8" Text="Local accounts on this machine"/>
+        <ItemsControl x:Name="AccountList">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <CheckBox Content="{Binding Name}" IsChecked="{Binding Selected, Mode=TwoWay}"
+                        Margin="0,0,0,6"/>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <TextBlock x:Name="NoAccounts" Visibility="Collapsed" Foreground="{StaticResource Muted}"
+                   Text="Could not list local accounts. Type a name below instead."/>
+        <Grid Margin="0,8,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+          </Grid.ColumnDefinitions>
+          <TextBox x:Name="ManualBox" Grid.Column="0" Padding="8,7"
+                   BorderBrush="{StaticResource Line}"/>
+          <Button Grid.Column="1" Content="Add" Margin="8,0,0,0" Click="OnAddManual"/>
+        </Grid>
+      </StackPanel>
+    </Border>
+
+    <Border Style="{StaticResource CardBorder}" Background="{StaticResource WarnBg}"
+            BorderBrush="{StaticResource Warning}">
+      <StackPanel>
+        <TextBlock FontWeight="SemiBold" Text="Keep a way back in"/>
+        <TextBlock Margin="0,6,0,0" MaxWidth="640">
+          Leave at least one administrator account unenrolled and not denied, on a machine where
+          you are about to put a filter in the logon path. A broken tile plus a denied network
+          logon is a locked machine, and the snapshot is then the only way back.
+        </TextBlock>
+      </StackPanel>
+    </Border>
+
+    <Border Style="{StaticResource CardBorder}">
+      <StackPanel>
+        <TextBlock FontWeight="SemiBold" Text="QR code, rendered here"/>
+        <TextBlock Margin="0,6,0,10" Foreground="{StaticResource Muted}" MaxWidth="640">
+          enroll.exe prints an otpauth:// URI. Paste it here and the QR is drawn locally, in
+          this process — nothing leaves the machine. Do not paste that URI into an online QR
+          generator: it contains the secret, and then it is not a secret.
+        </TextBlock>
+        <TextBox x:Name="UriBox" Padding="8,7" FontFamily="Consolas" FontSize="12"
+                 TextWrapping="Wrap" AcceptsReturn="False" MinHeight="54"
+                 BorderBrush="{StaticResource Line}" TextChanged="OnUriChanged"/>
+        <TextBlock x:Name="UriStatus" Margin="0,8,0,0" FontSize="12"
+                   Foreground="{StaticResource Muted}"/>
+        <Border x:Name="QrFrame" Background="White" BorderBrush="{StaticResource Line}"
+                BorderThickness="1" CornerRadius="6" Padding="12" Margin="0,12,0,0"
+                HorizontalAlignment="Left" Visibility="Collapsed">
+          <StackPanel>
+            <Image x:Name="QrImage" Width="240" Height="240" Stretch="Uniform"
+                   RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+            <Button Content="Clear" Margin="0,10,0,0" Click="OnClearQr" HorizontalAlignment="Left"/>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </Border>
+  </StackPanel>
+</UserControl>

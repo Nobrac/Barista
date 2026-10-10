@@ -1,0 +1,81 @@
+<UserControl x:Class="Barista.Views.InstallPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <StackPanel>
+    <TextBlock Style="{StaticResource H1}" Text="Install, one stage at a time"/>
+    <TextBlock Style="{StaticResource Lede}">
+      Part 2 says to change one thing per reboot, so that a machine that does not come back
+      tells you what caused it. Each stage below is one such change. After a restart this tool
+      comes back on its own and asks whether it worked before running the next one.
+    </TextBlock>
+
+    <ItemsControl x:Name="StageList" Margin="0,0,0,6">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate>
+          <Border Background="{Binding Background}" BorderBrush="{Binding Accent}"
+                  BorderThickness="{Binding Thickness}" CornerRadius="8" Padding="16"
+                  Margin="0,0,0,10">
+            <StackPanel>
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="26"/>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="{Binding Glyph}" FontWeight="Bold"
+                           Foreground="{Binding Accent}" VerticalAlignment="Top"/>
+                <StackPanel Grid.Column="1">
+                  <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="14"/>
+                  <TextBlock Text="{Binding Why}" Margin="0,4,0,0"
+                             Foreground="{StaticResource Muted}"/>
+                </StackPanel>
+                <Border Grid.Column="2" Background="{Binding BadgeBg}" CornerRadius="4"
+                        Padding="8,3" VerticalAlignment="Top"
+                        Visibility="{Binding BadgeVisibility}">
+                  <TextBlock Text="{Binding Badge}" FontSize="11" FontWeight="SemiBold"
+                             Foreground="{Binding Accent}"/>
+                </Border>
+              </Grid>
+              <ItemsControl ItemsSource="{Binding Steps}" Margin="26,10,0,0">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <StackPanel Margin="0,0,0,6">
+                      <TextBlock Text="{Binding Title}" FontSize="12.5"/>
+                      <TextBlock Text="{Binding Command}" FontFamily="Consolas" FontSize="11"
+                                 Foreground="{StaticResource Muted}"/>
+                    </StackPanel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </Border>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+
+    <TextBlock x:Name="EmptyNote" Visibility="Collapsed" Foreground="{StaticResource Muted}"
+               Margin="0,0,0,12"
+               Text="Nothing selected. Go back and pick at least one component."/>
+
+    <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+      <Button x:Name="RunButton" Content="Run this stage" Style="{StaticResource PrimaryButton}"
+              Click="OnRunStage" Margin="0,0,10,0"/>
+      <Button x:Name="RebootButton" Content="Save and restart now" Click="OnReboot"
+              Visibility="Collapsed" Style="{StaticResource PrimaryButton}" Margin="0,0,10,0"/>
+      <Button x:Name="LaterButton" Content="Save and restart later" Click="OnRebootLater"
+              Visibility="Collapsed"/>
+    </StackPanel>
+
+    <Border Style="{StaticResource CardBorder}" Padding="0">
+      <StackPanel>
+        <Border Background="#F4F1EA" CornerRadius="8,8,0,0" Padding="12,8">
+          <TextBlock x:Name="LogHeader" FontWeight="SemiBold" Text="Log"/>
+        </Border>
+        <TextBox x:Name="LogBox" Height="240" IsReadOnly="True" BorderThickness="0"
+                 FontFamily="Consolas" FontSize="11.5" Background="White"
+                 VerticalScrollBarVisibility="Auto" TextWrapping="NoWrap"
+                 HorizontalScrollBarVisibility="Auto" Padding="12"/>
+      </StackPanel>
+    </Border>
+  </StackPanel>
+</UserControl>

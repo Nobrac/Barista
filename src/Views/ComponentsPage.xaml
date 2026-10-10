@@ -1,0 +1,87 @@
+<UserControl x:Class="Barista.Views.ComponentsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <StackPanel>
+    <TextBlock Style="{StaticResource H1}" Text="What to install"/>
+    <TextBlock Style="{StaticResource Lede}">
+      These are three independent things, not three steps of one thing.
+    </TextBlock>
+
+    <Border Style="{StaticResource CardBorder}">
+      <StackPanel>
+        <CheckBox x:Name="ChkProvider" IsChecked="True" Checked="OnChanged" Unchecked="OnChanged"
+                  Margin="0,0,0,4">
+          <TextBlock FontWeight="SemiBold" Text="The credential provider (the logon tile)"/>
+        </CheckBox>
+        <TextBlock Margin="22,0,0,0" Foreground="{StaticResource Muted}" MaxWidth="620">
+          Adds a tile that asks for a password and a one-time code, and hides the other sign-in
+          options. Runs in LogonUI, not lsass — a bug here costs you a tile, and Safe Mode still
+          gets you in. This is the low-risk half of the project.
+        </TextBlock>
+      </StackPanel>
+    </Border>
+
+    <TextBlock FontWeight="SemiBold" Margin="2,6,0,2" Text="Non-interactive logons (SMB, WinRM, scheduled tasks)"/>
+    <TextBlock Margin="2,0,0,10" Foreground="{StaticResource Muted}" MaxWidth="640">
+      The tile never sees these. Pick one — the two filters both want the single MSV1_0 Auth0
+      slot, so they are genuinely exclusive.
+    </TextBlock>
+
+    <Border Style="{StaticResource CardBorder}">
+      <StackPanel>
+        <RadioButton x:Name="RbDeny" GroupName="Net" IsChecked="True"
+                     Checked="OnChanged">
+          <TextBlock FontWeight="SemiBold">
+            Deny rights only <Run Foreground="{StaticResource Good}" FontWeight="Normal"
+                                  Text="— recommended"/>
+          </TextBlock>
+        </RadioButton>
+        <TextBlock Margin="22,2,0,14" Foreground="{StaticResource Muted}" MaxWidth="620">
+          Sets the built-in "Deny log on" user rights for the account. Supported by Microsoft,
+          survives reboots, runs no code in lsass and cannot stop the machine booting. If your
+          goal is hardening rather than learning the layer, this is the whole answer and you can
+          leave the other two alone.
+        </TextBlock>
+
+        <CheckBox x:Name="ChkKeepNetwork" Margin="40,0,0,14" Checked="OnChanged" Unchecked="OnChanged">
+          <TextBlock MaxWidth="580" Foreground="{StaticResource Muted}">
+            Keep the network right, so RDP with NLA still works. SMB and WinRM then still take
+            the password alone for this account. There is no setting that gives you both.
+          </TextBlock>
+        </CheckBox>
+
+        <RadioButton x:Name="RbDoppioFilter" GroupName="Net" Checked="OnChanged">
+          <TextBlock FontWeight="SemiBold" Text="Doppio's sub-authentication filter — refuse network logons outright"/>
+        </RadioButton>
+        <TextBlock Margin="22,2,0,14" Foreground="{StaticResource Muted}" MaxWidth="620">
+          Unsigned DLL in lsass. Refuses every network logon for an enrolled account, which also
+          means that account can never map a share and RDP with NLA stops working for it.
+        </TextBlock>
+
+        <RadioButton x:Name="RbRistretto" GroupName="Net" Checked="OnChanged">
+          <TextBlock FontWeight="SemiBold" Text="Ristretto — gate network logons behind a one-time code"/>
+        </RadioButton>
+        <TextBlock x:Name="RistrettoNote" Margin="22,2,0,0" Foreground="{StaticResource Muted}"
+                   MaxWidth="620">
+          Unsigned DLL in lsass. Same refusal, unless a gate was opened with a TOTP in the last
+          few minutes. Note what it costs: while a gate is open, anyone who can authenticate as
+          that account gets in, not only you. And you have to be at this machine, elevated, to
+          open one.
+        </TextBlock>
+      </StackPanel>
+    </Border>
+
+    <Border Style="{StaticResource CardBorder}">
+      <StackPanel>
+        <CheckBox x:Name="ChkAuthPackage" Checked="OnChanged" Unchecked="OnChanged" Margin="0,0,0,4">
+          <TextBlock FontWeight="SemiBold" Text="The authentication package (closes nothing)"/>
+        </CheckBox>
+        <TextBlock Margin="22,0,0,0" Foreground="{StaticResource Muted}" MaxWidth="620">
+          Only ever called by a logon that addresses it by package id, which no normal logon
+          does. It is in the project to show how the layer works. Install it to watch it load,
+          not because it protects anything.
+        </TextBlock>
+      </StackPanel>
+    </Border>
+  </StackPanel>
+</UserControl>

@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+
+    <!-- The DLLs this tool installs are x64. Building the installer as AnyCPU
+         would let it run as x86 on a 64-bit box, where registry writes get
+         redirected into Wow6432Node and the install silently lands nowhere. -->
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>Barista</AssemblyName>
+    <RootNamespace>Barista</RootNamespace>
+    <Version>0.1.0</Version>
+    <Company>The Admin Cafe</Company>
+    <Product>Barista</Product>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Local QR rendering only. The point of this dependency is that nobody
+         has to paste a TOTP secret into an online QR generator. MIT licensed,
+         pure managed, no native bits. -->
+    <PackageReference Include="QRCoder" Version="1.6.0" />
+  </ItemGroup>
+
+</Project>

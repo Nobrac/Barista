@@ -1,0 +1,21 @@
+# The repositories bootstrap.bat clones beside itself. They have their own
+# history; this one is the workshop they get built in.
+/Doppio/
+/Ristretto/
+
+# Build output
+bin/
+obj/
+wizard-out/
+Barista.exe
+*.user
+*.suo
+
+# Rider / VS
+.vs/
+.idea/
+
+# Local NuGet restore
+packages/
+*.nuget.props
+*.nuget.targets

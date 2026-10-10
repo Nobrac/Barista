@@ -1,0 +1,33 @@
+name: build
+on: [push, pull_request]
+
+jobs:
+  wizard:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # Only the wizard is built here. Doppio and Ristretto need MSVC and are
+      # built by their own repositories; bootstrap.bat is what joins the three
+      # on a real machine, and there is nothing useful to assert about it in CI.
+      - name: Build
+        run: dotnet build src/Barista.csproj -c Release
+
+      - name: Publish
+        run: >
+          dotnet publish src/Barista.csproj -c Release -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          -o wizard-out
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: barista
+          path: wizard-out/Barista.exe

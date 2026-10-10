@@ -1,0 +1,73 @@
+<UserControl x:Class="Barista.Views.SourcePage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <StackPanel>
+    <TextBlock Style="{StaticResource H1}" Text="Where are the binaries?"/>
+    <TextBlock Style="{StaticResource Lede}">
+      Point this at the folders you cloned. If the binaries are not built yet, it can build them
+      here — it finds the MSVC environment itself, so there is no need for the x64 Native Tools
+      Command Prompt.
+    </TextBlock>
+
+    <Border x:Name="ToolchainCard" Style="{StaticResource CardBorder}">
+      <StackPanel>
+        <TextBlock x:Name="ToolchainHeading" FontWeight="SemiBold"/>
+        <TextBlock x:Name="ToolchainDetail" Margin="0,4,0,0" Foreground="{StaticResource Muted}"/>
+      </StackPanel>
+    </Border>
+
+    <Border Style="{StaticResource CardBorder}">
+      <StackPanel>
+        <TextBlock FontWeight="SemiBold" Text="Doppio"/>
+        <TextBlock Margin="0,4,0,10" Foreground="{StaticResource Muted}">
+          The folder holding TacProvider.dll, enroll.exe, the .reg files and the install-*.ps1
+          scripts — the repository root after build.bat has run.
+        </TextBlock>
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="Auto"/>
+          </Grid.ColumnDefinitions>
+          <TextBox x:Name="DoppioBox" Grid.Column="0" Padding="8,7" FontFamily="Consolas"
+                   FontSize="12" TextChanged="OnPathChanged"
+                   BorderBrush="{StaticResource Line}"/>
+          <Button Grid.Column="1" Content="Browse…" Margin="8,0,0,0" Click="OnBrowseDoppio"/>
+          <Button x:Name="BuildDoppioButton" Grid.Column="2" Content="Build…" Margin="8,0,0,0"
+                  Click="OnBuildDoppio"/>
+        </Grid>
+        <TextBlock x:Name="DoppioStatus" Margin="0,8,0,0" FontSize="12"/>
+      </StackPanel>
+    </Border>
+
+    <Border Style="{StaticResource CardBorder}">
+      <StackPanel>
+        <CheckBox x:Name="ChkRistretto" Checked="OnRistrettoToggled" Unchecked="OnRistrettoToggled"
+                  Margin="0,0,0,6">
+          <TextBlock FontWeight="SemiBold" Text="I also want to install Ristretto"/>
+        </CheckBox>
+        <TextBlock Margin="22,0,0,10" Foreground="{StaticResource Muted}" MaxWidth="600">
+          Ristretto replaces Doppio's flat "no network logons for enrolled accounts" with a gate:
+          prove a one-time code, get a short window during which SMB and WinRM work. It needs
+          Doppio installed and at least one account enrolled first. Worth knowing before you tick
+          this: the gate is opened on this machine, elevated, so it only helps if you already have
+          console access here. It does nothing for a headless box or an unattended backup job.
+        </TextBlock>
+        <Grid x:Name="RistrettoRow" IsEnabled="False" Margin="22,0,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="Auto"/>
+          </Grid.ColumnDefinitions>
+          <TextBox x:Name="RistrettoBox" Grid.Column="0" Padding="8,7" FontFamily="Consolas"
+                   FontSize="12" TextChanged="OnPathChanged"
+                   BorderBrush="{StaticResource Line}"/>
+          <Button Grid.Column="1" Content="Browse…" Margin="8,0,0,0" Click="OnBrowseRistretto"/>
+          <Button x:Name="BuildRistrettoButton" Grid.Column="2" Content="Build…" Margin="8,0,0,0"
+                  Click="OnBuildRistretto"/>
+        </Grid>
+        <TextBlock x:Name="RistrettoStatus" Margin="22,8,0,0" FontSize="12"/>
+      </StackPanel>
+    </Border>
+  </StackPanel>
+</UserControl>
