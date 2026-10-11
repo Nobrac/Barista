@@ -207,6 +207,10 @@ public static class InstallPlan
                 break;
 
             case NetworkPolicy.RistrettoGate:
+            {
+                var installScript = Path.Combine(ristretto, "install-ristretto.ps1");
+                string[] installArgs = AcceptsConfirmedSwitch(installScript) ? ["-Confirmed"] : [];
+
                 stages.Add(new Stage(
                     StageId.NetworkPolicy,
                     "The Ristretto gate",
@@ -218,8 +222,8 @@ public static class InstallPlan
                             "Takes over the Auth0 slot (saving whatever held it) and puts "
                             + "ristretto.exe next to TacProvider.dll. Network logons then need a "
                             + "gate opened with a one-time code within the last few minutes.",
-                            Path.Combine(ristretto, "install-ristretto.ps1"),
-                            [],
+                            installScript,
+                            installArgs,
                             StepKind.Script),
                     ],
                     RebootAfter: true,
@@ -233,6 +237,7 @@ public static class InstallPlan
                         + "working with the gate closed, MSV1_0 is not calling the filter on this "
                         + "build and the gate is decorative."));
                 break;
+            }
         }
 
         // --- 4. the authentication package ----------------------------------
@@ -264,6 +269,39 @@ public static class InstallPlan
         }
 
         return stages;
+    }
+
+    /// <summary>
+    /// Whether a script declares a -Confirmed switch.
+    ///
+    /// install-ristretto.ps1 confirms with Read-Host, which throws rather
+    /// than prompting under -NonInteractive - and -NonInteractive is how
+    /// ProcessRunner starts every script, because a script that stops to ask
+    /// something nobody can answer is a hung install. The script therefore
+    /// takes -Confirmed, and this is the caller that passes it: by the time a
+    /// stage runs, the question has been put three times already (the risk
+    /// checkboxes, the stage confirmation, the restart dialog).
+    ///
+    /// The check exists because the two repositories move independently.
+    /// Passing -Confirmed to a copy of the script that predates the switch
+    /// fails with "a parameter cannot be found", which would be a worse error
+    /// than the one this fixes. Older script, no switch, same behaviour as
+    /// before.
+    /// </summary>
+    private static bool AcceptsConfirmedSwitch(string scriptPath)
+    {
+        try
+        {
+            return File.Exists(scriptPath)
+                   && File.ReadAllText(scriptPath)
+                           .Contains("$Confirmed", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            // Unreadable here means unreadable for powershell.exe too, and
+            // the step itself reports that properly. Nothing to add.
+            return false;
+        }
     }
 
     /// <summary>The reverse, for the recovery path.</summary>
