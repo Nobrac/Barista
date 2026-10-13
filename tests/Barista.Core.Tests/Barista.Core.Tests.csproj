@@ -24,12 +24,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- The packer is PowerShell and its file list is a copy of Preflight's.
-         PackagingTests reads it from the output folder and asserts the two
-         still agree - a file missing from a bundle is not a build error, it is
-         a red line on somebody else's screen. -->
-    <None Include="..\..\tools\package-release.ps1" Link="package-release.ps1"
-          CopyToOutputDirectory="PreserveNewest" />
+    <!-- The payload builder is PowerShell and its file list is a copy of
+         Preflight's. PackagingTests reads it from the output folder and asserts
+         the two still agree - a file missing from a release is not a build
+         error, it is a red row on somebody else's integrity page. -->
     <None Include="..\..\tools\build-payload.ps1" Link="build-payload.ps1"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

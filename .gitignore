@@ -9,10 +9,8 @@ obj/
 wizard-out/
 TestResults/
 
-# What tools\package-release.ps1 writes: a copy of the built binaries plus a
-# ~70 MB self-contained exe. Releases belong on the releases page, not in the
-# history.
-dist/
+# The self-contained exe bootstrap.bat copies to the root. Releases belong on
+# the releases page, not in the history.
 Barista.exe
 *.user
 *.suo

@@ -33,9 +33,8 @@
     powershell -ExecutionPolicy Bypass -File tools\build-payload.ps1 -Version 0.2.0-dev
 
 .NOTES
-    The file lists below are the same as in package-release.ps1 and mirror
-    Preflight.cs. PackagingTests asserts that both scripts cover every file
-    Preflight names, so they cannot drift apart quietly.
+    The file lists below mirror Preflight.cs. PackagingTests asserts that
+    they cover every file Preflight names, so they cannot drift apart quietly.
 #>
 [CmdletBinding()]
 param(
@@ -67,7 +66,7 @@ $DoppioDir    = (Resolve-Path -LiteralPath $DoppioDir).Path
 $RistrettoDir = (Resolve-Path -LiteralPath $RistrettoDir).Path
 
 # --- what goes in -------------------------------------------------------------
-# Mirrors Preflight.cs, like package-release.ps1. A file missing here is a
+# Mirrors Preflight.cs. A file missing here is a
 # release whose own integrity page shows a red row on someone else's machine.
 
 $DoppioFiles = @(

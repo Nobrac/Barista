@@ -51,9 +51,10 @@ without an embedded payload, which asks for folders and can build them.
 ## Use it
 
 This is the *building* machine. If you only want to install Doppio and
-Ristretto somewhere — or hand them to somebody — skip to
-[Handing it to someone else](#handing-it-to-someone-else): that needs no
-compiler at all.
+Ristretto somewhere — or hand them to somebody — use the standalone
+`Barista.exe` from the release page instead, see
+[Download and run](#download-and-run-standalone): that needs no compiler at
+all.
 
 ```bat
 git clone https://github.com/Nobrac/Barista
@@ -109,58 +110,16 @@ fatal. A folder that is already there and not empty is never deleted or
 overwritten — it may be your own checkout — it is reported and left alone.
 
 Submodules are the one thing a zip cannot carry: GitHub source archives never
-include them. So when Ristretto arrived as a zip, the Doppio sources it links
-into `extern/doppio/` are copied out of the Doppio folder next door, which also
-guarantees both halves are built from the same Doppio.
+include them. Pinned, the bootstrap downloads Ristretto's Doppio submodule as a
+second zip, at the commit `payload.lock.json` records for it. Unpinned, the
+Doppio sources Ristretto links into `extern/doppio/` are copied out of the
+Doppio folder next door.
 
 `install-doppio.ps1` is fetched on its own if the Doppio checkout predates it —
 the wizard's preflight blocks without it. It is looked for in `Doppio/` first
 (version control wins), then beside the bootstrap, then on Doppio's default
 branch. One file, not a re-clone: by that point Doppio may already be built,
 and throwing that away for a 4 KB script means another MSVC run.
-
-## Handing it to someone else
-
-Everything above is the *workshop*: the machine that compiles. Nobody else
-needs one. `tools\package-release.ps1` takes a working copy that has been
-through `bootstrap.bat` once and writes out what the install actually needs:
-
-```bat
-powershell -ExecutionPolicy Bypass -File tools\package-release.ps1
-```
-
-```
-dist\Barista-0.1.0\
-    Barista.exe          self-contained; no .NET on the target either
-    READ-ME-FIRST.txt
-    Doppio\              the built DLLs, the .reg files, the install scripts
-    Ristretto\           the same, when it is included
-dist\Barista-0.1.0.zip
-```
-
-That folder is the whole thing. The machine it goes to needs **no git, no .NET
-SDK and no C++ compiler** — only administrator rights. The wizard finds the two
-folders beside itself, and every file it checks for is already there, so it
-never offers to build anything.
-
-Three things the packer does on purpose:
-
-- **It refuses to pack an incomplete build**, and names the missing files. The
-  alternative is a bundle that fails its own preflight in front of somebody
-  else, which is the worst possible place to discover a missing DLL.
-- **It ships no `build.bat`.** A build script on a machine with no compiler is
-  a button whose only outcome is "install several gigabytes of Visual Studio
-  first".
-- **Its file list is tested** against `Preflight`'s, in both directions. A file
-  the wizard checks for and the packer forgets is not a build error and not a
-  test failure anywhere else — it is a red line on a stranger's screen.
-
-Two things it cannot do for you. The exe is **unsigned**, so SmartScreen will
-warn on a machine that has never seen it; that is honest, and the person
-running it should know what they are running. And the warning at the top of
-this file travels with the bundle: this installs an unsigned DLL into
-`lsass.exe`, so it belongs on a test VM with a snapshot, not on a laptop
-somebody needs on Monday. `READ-ME-FIRST.txt` says so in those words.
 
 ## What it does not do
 
@@ -312,7 +271,7 @@ look like a failed one.
 bootstrap.bat          fetch, build, launch
 tools/
   fetch-from-github.ps1  clone -> release -> branch zip, with a progress bar
-  package-release.ps1    a built workshop -> one folder to hand to somebody
+  build-payload.ps1      pinned checkouts -> the payload a release embeds
 core/                  everything that decides what happens to the machine
   Preflight.cs           the checks the install scripts would otherwise fail on
   InstallPlan.cs         the stage plan and the recovery plan
@@ -322,7 +281,8 @@ core/                  everything that decides what happens to the machine
   BuildRunner.cs         builds Doppio and Ristretto through vcvars64
 src/                   the WPF wizard - windows, pages, dialogs
   Views/               one file per wizard page
-tests/                 what the stage plan and the runner are held to
+tests/                 what the stage plan, the runner and the payload are held to
+payload.lock.json      the Doppio and Ristretto commits a release is built from
 Doppio/                fetched by bootstrap, gitignored
 Ristretto/             fetched by bootstrap, gitignored
 ```

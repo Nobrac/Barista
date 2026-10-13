@@ -115,7 +115,7 @@ public partial class SourcePage : UserControl, IWizardPage
     /// machine.
     ///
     /// A packaged bundle - Barista.exe beside folders of already-built DLLs,
-    /// which is what tools\package-release.ps1 writes - lands on a machine that
+    /// copied over from a machine that built them - lands on a machine that
     /// has no compiler and needs none. Reporting "No C++ toolchain" in warning
     /// colours there is a red mark against a machine that is set up exactly
     /// right, and the only thing it can teach somebody is to go and install

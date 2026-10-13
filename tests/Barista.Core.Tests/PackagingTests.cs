@@ -5,28 +5,21 @@ using Xunit;
 namespace Barista.Core.Tests;
 
 /// <summary>
-/// Keeps tools\package-release.ps1 and Preflight's file lists in step.
+/// Keeps tools\build-payload.ps1 and Preflight's file lists in step.
 ///
-/// The bundle that goes to somebody else is only as good as its file list: a
-/// file the wizard checks for and the packer forgot is not a build error, not a
-/// test failure and not visible here at all. It shows up as a red line on a
-/// stranger's screen, on a machine with no compiler to fix it with.
+/// The standalone release is only as good as the payload's file list: a file
+/// the wizard checks for and the payload builder forgot is not a build error,
+/// not a test failure and not visible here at all. It shows up as a red row on
+/// the integrity page of a stranger's machine, with no compiler to fix it with.
 ///
 /// So the lists are asserted in both directions - nothing the wizard needs is
 /// left out, and nothing is packed that no list names.
 /// </summary>
 public class PackagingTests
 {
-    private const string Packer = "package-release.ps1";
-
-    /// <summary>
-    /// What CI embeds into a standalone release. Same lists, same rule: a file
-    /// it leaves out is a red row on the integrity page of somebody else's
-    /// machine, with no compiler there to make it.
-    /// </summary>
     private const string PayloadBuilder = "build-payload.ps1";
 
-    private static string Script(string name = Packer)
+    private static string Script(string name = PayloadBuilder)
     {
         var path = Path.Combine(AppContext.BaseDirectory, name);
         Assert.True(File.Exists(path),
@@ -36,7 +29,7 @@ public class PackagingTests
     }
 
     /// <summary>The files one `$Name = @( ... )` list in the script packs.</summary>
-    private static HashSet<string> Packed(string variable, string script = Packer)
+    private static HashSet<string> Packed(string variable, string script = PayloadBuilder)
     {
         var block = Regex.Match(Script(script), $@"\${variable}\s*=\s*@\((.*?)\n\)", RegexOptions.Singleline);
         Assert.True(block.Success, $"${variable} is not an @( ... ) list in {script}.");
@@ -63,7 +56,7 @@ public class PackagingTests
         Preflight.RistrettoFiles,
         Preflight.RistrettoRecoveryFiles);
 
-    private static void AssertCovers(string variable, HashSet<string> needed, string script = Packer)
+    private static void AssertCovers(string variable, HashSet<string> needed, string script = PayloadBuilder)
     {
         var packed = Packed(variable, script);
 
@@ -72,22 +65,14 @@ public class PackagingTests
             $"{script} ${variable} does not pack: {string.Join(", ", missing)}. "
             + "The wizard's preflight blocks on those, on a machine that cannot build them.");
 
-        // Not tidiness. A file in the bundle that no list names is still a file
-        // the packer refuses to build a bundle without, so a repository that
-        // stops shipping it turns into "not fully built" for a good checkout.
+        // Not tidiness. A file in the payload that no list names is still a file
+        // the builder refuses to build without, so a repository that stops
+        // shipping it turns into "not fully built" for a good checkout.
         var extra = packed.Except(needed, StringComparer.OrdinalIgnoreCase).ToArray();
         Assert.True(extra.Length == 0,
             $"{script} ${variable} packs files no Preflight list names: "
             + string.Join(", ", extra));
     }
-
-    [Fact]
-    public void The_bundle_carries_exactly_what_the_wizard_checks_for_in_Doppio()
-        => AssertCovers("DoppioFiles", DoppioNeeded());
-
-    [Fact]
-    public void The_bundle_carries_exactly_what_the_wizard_checks_for_in_Ristretto()
-        => AssertCovers("RistrettoFiles", RistrettoNeeded());
 
     [Fact]
     public void The_standalone_payload_carries_exactly_what_the_wizard_checks_for_in_Doppio()
@@ -100,24 +85,16 @@ public class PackagingTests
     [Fact]
     public void The_standalone_payload_ships_no_build_script()
     {
+        // The whole point of the release is a machine with no compiler on it.
+        // Shipping build.bat there offers a button whose only possible outcome
+        // is "install several gigabytes of Visual Studio first".
         var packed = Packed("DoppioFiles", PayloadBuilder).Concat(Packed("RistrettoFiles", PayloadBuilder));
         Assert.DoesNotContain("build.bat", packed, StringComparer.OrdinalIgnoreCase);
         Assert.DoesNotContain("build-ristretto.bat", packed, StringComparer.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void The_bundle_ships_no_build_script()
-    {
-        // The whole point of the bundle is a machine with no compiler on it.
-        // Shipping build.bat there offers a button whose only possible outcome
-        // is "install several gigabytes of Visual Studio first".
-        var script = Script();
-        Assert.DoesNotContain("'build.bat'", script);
-        Assert.DoesNotContain("'build-ristretto.bat'", script);
-    }
-
-    [Fact]
-    public void The_binaries_a_build_produces_are_all_in_the_bundle()
+    public void The_binaries_a_build_produces_are_all_in_the_payload()
     {
         // The DLLs and exes are the part nobody on the receiving end can
         // recreate, so they are worth naming separately from the lists above.
