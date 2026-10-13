@@ -85,15 +85,17 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "$($r[0]) could not be fetched at the pin (exit $LASTEXITCODE)" }
           }
 
-          $checks = @(
-            @("$work/Doppio/.barista-pin",                    $lock.doppio.commit)
-            @("$work/Ristretto/.barista-pin",                 $lock.ristretto.commit)
-            @("$work/Ristretto/extern/doppio/.barista-pin",   $lock.ristretto.doppioSubmodule.commit)
-          )
-          foreach ($c in $checks) {
-            $got = (Get-Content $c[0] -Raw).Trim()
-            if ($got -ne $c[1]) { throw "$($c[0]) says $got, expected $($c[1])" }
-            Write-Host "ok  $($c[1])  $($c[0])"
+          # A hashtable, not nested @() arrays: PowerShell flattens those.
+          $checks = [ordered]@{
+            "$work/Doppio/.barista-pin"                  = $lock.doppio.commit
+            "$work/Ristretto/.barista-pin"               = $lock.ristretto.commit
+            "$work/Ristretto/extern/doppio/.barista-pin" = $lock.ristretto.doppioSubmodule.commit
+          }
+          foreach ($file in $checks.Keys) {
+            $want = $checks[$file]
+            $got = (Get-Content $file -Raw).Trim()
+            if ($got -ne $want) { throw "$file says $got, expected $want" }
+            Write-Host "ok  $want  $file"
           }
           if (-not (Test-Path "$work/Ristretto/extern/doppio/verify.cpp")) { throw "Ristretto's Doppio submodule is empty" }
 
