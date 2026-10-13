@@ -70,9 +70,18 @@ Nothing has to be downloaded by hand first.
 |---|---|
 | `/nodeps` | install nothing through winget |
 | `/noclone` | fetch nothing; use whatever folders are already there |
-| `/update` | bring existing clones up to date (`git pull --ff-only`) before building |
-| `/doppio-ref=<ref>` | pin Doppio to a tag or branch |
-| `/ristretto-ref=<ref>` | pin Ristretto to a tag or branch |
+| `/update` | bring existing clones up to date (`git pull --ff-only`); only with `/unpinned` |
+| `/unpinned` | ignore `payload.lock.json` and take the latest release or default branch |
+| `/doppio-ref=<ref>` | build Doppio from this tag or branch instead of the pin |
+| `/ristretto-ref=<ref>` | the same for Ristretto |
+
+By default the bootstrap fetches Doppio and Ristretto at the commits in
+[`payload.lock.json`](payload.lock.json) - the same ones the standalone release
+is built from - so a self-built copy and a downloaded one contain the same
+code. A clone at another commit is moved to the pin if it has no local
+changes; a folder with local changes or of unknown origin is left alone and
+the bootstrap stops and says so. Without git, it downloads a zip of exactly
+that commit, and Ristretto's Doppio submodule at the commit Ristretto records.
 
 ### How the sources are fetched
 

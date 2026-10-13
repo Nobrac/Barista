@@ -153,6 +153,16 @@ foreach ($line in @($sub)) {
     }
 }
 
+# And that commit is the one payload.lock.json names, so the lock file alone
+# says everything a release was built from - bootstrap.bat reads the same
+# entry when it has to fetch the submodule as a zip.
+$subPin = $lock.ristretto.doppioSubmodule.commit
+$subHead = (& git -C (Join-Path (Join-Path $RistrettoDir 'extern') 'doppio') rev-parse HEAD 2>$null)
+if (-not $subHead -or $subHead.Trim() -ne $subPin) {
+    Fail "Ristretto's extern\doppio is at '$subHead', but payload.lock.json pins $subPin. Update the lock file together with the Ristretto pin."
+}
+Write-Host "  Ristretto extern\doppio  $subPin  (pinned)"
+
 # --- 2. build ---------------------------------------------------------------------
 
 function Invoke-MsvcBuild([string] $Dir, [string] $Script) {

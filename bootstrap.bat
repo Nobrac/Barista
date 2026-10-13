@@ -7,9 +7,10 @@ rem  everything else is fetched and built beside it. It will:
 rem
 rem    1. elevate itself
 rem    2. install git, the .NET 10 SDK and the MSVC build tools if missing
-rem    3. fetch Doppio and Ristretto from github.com/Nobrac if they are not
-rem       already beside it - a clone where git can, a release or branch zip
-rem       where it cannot
+rem    3. fetch Doppio and Ristretto from github.com/Nobrac at the commits
+rem       pinned in payload.lock.json - the same commits the standalone
+rem       release is built from - as a clone where git can, a zip of that
+rem       commit where it cannot
 rem    4. pull the Doppio submodule Ristretto needs
 rem    5. build all three projects
 rem    6. launch the setup wizard
@@ -21,9 +22,13 @@ rem    - decide whether to turn RunAsPPL off
 rem
 rem  Flags:  /nodeps              do not install anything with winget
 rem          /noclone             do not fetch; use the folders already here
-rem          /update              bring existing clones up to date (git pull)
-rem          /doppio-ref=<ref>    pin Doppio to a tag or branch
-rem          /ristretto-ref=<ref> pin Ristretto to a tag or branch
+rem          /update              bring existing clones up to date (git pull);
+rem                               only with /unpinned - pinned, the pin decides
+rem          /unpinned            ignore payload.lock.json and take the latest
+rem                               release or default branch, as before
+rem          /doppio-ref=<ref>    build Doppio from this tag or branch instead
+rem                               of the pin (implies unpinned for Doppio)
+rem          /ristretto-ref=<ref> the same for Ristretto
 rem
 rem  Note on structure: every check lives in a subroutine that returns an exit
 rem  code, and the main flow is flat `call :x || goto :fail`. Jumping out of a
@@ -89,6 +94,7 @@ if "%~1"=="" goto :argsdone
 if /i "%~1"=="/nodeps"   set NODEPS=1
 if /i "%~1"=="/noclone"  set NOCLONE=1
 if /i "%~1"=="/update"   set UPDATE=1
+if /i "%~1"=="/unpinned" set UNPINNED=1
 rem /elevated is the sentinel the relaunch above passes to itself. It is
 rem matched by nothing here on purpose; falling through is what should happen.
 set "ARG=%~1"
@@ -103,6 +109,14 @@ rem The downloader. Kept out of this file because it does real work - a
 rem ladder of clone, release and branch-zip, each with a progress bar - and
 rem batch is the wrong language for an HTTP stream read in a loop.
 set "FETCH=%ROOT%tools\fetch-from-github.ps1"
+
+rem The pins. Same file the release workflow builds from, so a self-built copy
+rem and a downloaded one come from the same commits. /unpinned, or an
+rem explicit /doppio-ref= or /ristretto-ref=, opts out per repository.
+set "LOCK=%ROOT%payload.lock.json"
+set PINNED=
+if not defined UNPINNED if exist "%LOCK%" set PINNED=1
+set PINFAIL=
 
 rem -Ref for a single file is the branch, so a tag pinned for the repository
 rem is not reusable here; only an explicit branch is.
@@ -264,6 +278,12 @@ rem "did it arrive or not".
 if not exist "src\Barista.csproj" (set FAILMSG=nosetup& exit /b 1)
 if not exist "%FETCH%" (set FAILMSG=nofetcher& exit /b 1)
 
+if defined PINNED (
+    echo [src] Pinned to the commits in payload.lock.json.
+) else (
+    echo [src] Unpinned: taking whatever GitHub currently has.
+)
+
 if not defined NOCLONE (
     call :fetch_repo Doppio build.bat
     rem Ristretto is optional. A repository that is private, unpublished or
@@ -271,9 +291,10 @@ if not defined NOCLONE (
     rem does, so a failure here is "not available" and not an error.
     call :fetch_repo Ristretto build-ristretto.bat
 ) else (
-    echo [src] /noclone - using the folders that are already here.
+    echo [src] /noclone - using the folders that are already here, unchecked.
 )
 
+if defined PINFAIL (set FAILMSG=pin& exit /b 1)
 if not exist "Doppio\build.bat" (set FAILMSG=nodoppio& exit /b 1)
 
 call :ensure_install_script || exit /b 1
@@ -306,12 +327,18 @@ set "REF="
 if /i "%~1"=="Ristretto" if defined RISTRETTOREF set "REF=-Ref %RISTRETTOREF%"
 if /i "%~1"=="Doppio"    if defined DOPPIOREF    set "REF=-Ref %DOPPIOREF%"
 
+rem Pinned unless this repository was given its own ref.
+set "PIN="
+if defined PINNED if not defined REF set "PIN=-LockFile "%LOCK%" -LockKey %~1"
+
 set "UPD="
-if defined UPDATE set "UPD=-Update"
+if defined UPDATE if not defined PIN set "UPD=-Update"
 
 echo [src] %~1...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%FETCH%" ^
-    -Owner Nobrac -Repo "%~1" -Dest "%ROOT%%~1" -Marker "%~2" !REF! !UPD!
+    -Owner Nobrac -Repo "%~1" -Dest "%ROOT%%~1" -Marker "%~2" !REF! !PIN! !UPD!
+rem 2 = something is here that is not the pin. Stop rather than build it.
+if errorlevel 2 set "PINFAIL=%~1"
 exit /b 0
 
 
@@ -361,6 +388,16 @@ if exist "Ristretto\.git" (
     pushd Ristretto
     git submodule update --init --recursive --quiet
     popd
+)
+
+rem Pinned, the fetcher has already put the submodule at the commit Ristretto
+rem records. Copying Doppio next door across would build a different Doppio
+rem than the release does, so that fallback is for unpinned runs only.
+if defined PINNED if not defined RISTRETTOREF (
+    if exist "Ristretto\extern\doppio\verify.cpp" exit /b 0
+    echo [src] WARNING: Ristretto's pinned Doppio sources are missing. Skipping Ristretto.
+    set HAVERISTRETTO=
+    exit /b 0
 )
 
 if not exist "Ristretto\extern\doppio\verify.cpp" (
@@ -468,6 +505,15 @@ if "%FAILMSG%"=="nodoppio" (
     echo.
     echo   If this machine has no way out to GitHub, put the Doppio repository
     echo   in a folder called Doppio beside this file and run with /noclone.
+)
+if "%FAILMSG%"=="pin" (
+    echo   %PINFAIL% is here, but not at the commit payload.lock.json pins,
+    echo   and it was left alone: it has local changes, or it is a folder of
+    echo   unknown origin. The lines above say which.
+    echo.
+    echo   Either rename or delete that folder and run again, so the pinned
+    echo   version is fetched - or, to build what is there anyway, run with
+    echo   /unpinned. An unpinned build is not what the release contains.
 )
 if "%FAILMSG%"=="nosetup" (
     echo   No src\Barista.csproj here.

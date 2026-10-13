@@ -56,7 +56,15 @@ param(
     [switch] $NoRelease,
 
     # An existing git clone is brought up to date instead of left alone.
-    [switch] $Update
+    [switch] $Update,
+
+    # Pinned mode: take the commit for this repository from payload.lock.json
+    # (the entry named by -LockKey: doppio or ristretto) and accept nothing
+    # else. This is what the standalone release is built from, so a
+    # self-built copy ends up with exactly the same sources. Overrides -Ref,
+    # releases and branches; -Update then means "move to the pin".
+    [string] $LockFile,
+    [string] $LockKey
 )
 
 $ErrorActionPreference = 'Stop'
@@ -265,6 +273,163 @@ if ($File) {
     }
 
     Write-Step "$File is not in $Owner/$Repo on GitHub."
+    exit 1
+}
+
+# ---------------------------------------------------------------------------
+#  Pinned: exactly one commit, from payload.lock.json
+# ---------------------------------------------------------------------------
+#
+# Exit codes: 0 = at the pin, 1 = could not be fetched at all (for Ristretto
+# the ordinary "not available"), 2 = something is here that is NOT the pin and
+# was left alone. The bootstrap stops on 2 for either repository: building a
+# different commit than the release while believing it is the same one is the
+# thing pinning exists to prevent.
+
+if ($LockFile -and $LockKey) {
+    $lock = Get-Content -LiteralPath $LockFile -Raw | ConvertFrom-Json
+    $entry = $lock.$LockKey
+    if (-not $entry -or $entry.commit -notmatch '^[0-9a-f]{40}$') {
+        Write-Step "payload.lock.json has no full commit id for '$LockKey'."
+        exit 2
+    }
+    $Commit = $entry.commit
+    $Sub = $entry.doppioSubmodule      # Ristretto only; $null otherwise
+
+    $haveGit = [bool] (Get-Command git -ErrorAction SilentlyContinue)
+    $pinFile = '.barista-pin'           # what a zip download records instead of .git
+
+    function Get-Pin([string] $Dir) {
+        if (Test-Path -LiteralPath (Join-Path $Dir '.git')) {
+            if (-not $haveGit) { return $null }
+            $h = (& git -C $Dir rev-parse HEAD 2>$null)
+            if ($h) { return $h.Trim() } else { return $null }
+        }
+        $f = Join-Path $Dir $pinFile
+        if (Test-Path -LiteralPath $f) { return (Get-Content -LiteralPath $f -Raw).Trim() }
+        return $null
+    }
+
+    function Test-Clean([string] $Dir) {
+        $dirty = (& git -C $Dir status --porcelain --untracked-files=no)
+        return -not $dirty
+    }
+
+    # Clone or fetch, then a detached checkout of the pin. Fetching the sha
+    # itself as a fallback covers a commit that is no longer on any branch
+    # head; GitHub serves any reachable commit by id.
+    function Set-GitPin([string] $Dir, [string] $Sha) {
+        & git -C $Dir checkout --quiet --detach $Sha 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            & git -C $Dir fetch --quiet origin $Sha
+            & git -C $Dir checkout --quiet --detach $Sha
+        }
+        if ($LASTEXITCODE -ne 0) { return $false }
+        & git -C $Dir submodule update --init --recursive --quiet
+        return ((Get-Pin $Dir) -eq $Sha)
+    }
+
+    # A zip of one commit. codeload serves /zip/<sha> for any commit, and the
+    # sha in the URL is what pins it - a branch zip is a moving target.
+    function Get-ZipPin([string] $Owner_, [string] $Repo_, [string] $Sha, [string] $Into) {
+        $zip = $null
+        try {
+            Write-Step "downloading $Repo_ at $($Sha.Substring(0, 7)) as a zip..."
+            $zip = Get-ToTempFile "https://codeload.github.com/$Owner_/$Repo_/zip/$Sha" '.zip'
+            Expand-ZipIntoDest $zip $Into
+            Set-Content -LiteralPath (Join-Path $Into $pinFile) -Value $Sha -Encoding Ascii
+            return $true
+        } catch {
+            Write-Step "download failed: $($_.Exception.Message)"
+            return $false
+        } finally {
+            if ($zip) { Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue }
+        }
+    }
+
+    # Ristretto's Doppio submodule, for a Ristretto that arrived as a zip and
+    # so has an empty extern\doppio. At the commit Ristretto records, which is
+    # not necessarily the Doppio pin - copying the Doppio folder next door
+    # across, as the unpinned path does, would build something the release
+    # was not built from.
+    function Add-ZipSubmodule([string] $Dir) {
+        if (-not $Sub) { return $true }
+        $target = Join-Path (Join-Path $Dir 'extern') 'doppio'
+        if ((Get-Pin $target) -eq $Sub.commit) { return $true }
+        if (Test-Path -LiteralPath $target) {
+            if (@(Get-ChildItem -LiteralPath $target -Force).Count -gt 0) {
+                Write-Step "$target holds something other than the pinned Doppio sources - leaving it alone."
+                return $false
+            }
+        }
+        $parts = ($Sub.repository -replace '\.git$', '').TrimEnd('/') -split '/'
+        return (Get-ZipPin $parts[-2] $parts[-1] $Sub.commit $target)
+    }
+
+    Write-Step "pinned to $Commit (payload.lock.json)"
+
+    # --- already here ------------------------------------------------------
+    if (Test-Path -LiteralPath $Dest) {
+        $now = Get-Pin $Dest
+        $isGit = Test-Path -LiteralPath (Join-Path $Dest '.git')
+
+        if ($now -eq $Commit) {
+            if ($isGit) { & git -C $Dest submodule update --init --recursive --quiet }
+            elseif (-not (Add-ZipSubmodule $Dest)) { exit 2 }
+            Write-Step "$Repo is already at the pin."
+            exit 0
+        }
+
+        if ($isGit -and $haveGit) {
+            # A clone at some other commit. Moved to the pin only when that
+            # throws nothing away: local edits are somebody's work, and a pinned
+            # build is not a reason to discard them.
+            if (-not (Test-Clean $Dest)) {
+                Write-Step "$Repo has local changes and is at $now, not the pin. Leaving it alone."
+                exit 2
+            }
+            Write-Step "moving the existing $Repo clone to the pin..."
+            & git -C $Dest fetch --quiet origin
+            if (Set-GitPin $Dest $Commit) { Write-Step "$Repo is at the pin."; exit 0 }
+            Write-Step "could not check out the pin in the existing $Repo clone."
+            exit 2
+        }
+
+        if (@(Get-ChildItem -LiteralPath $Dest -Force).Count -gt 0) {
+            $what = if ($now) { "commit $now" } else { 'an unknown version' }
+            Write-Step "a folder called $Repo is here with $what, not the pin. Leaving it alone."
+            Write-Step "Rename or delete it to have the pinned version fetched, or run with /unpinned."
+            exit 2
+        }
+        Remove-Item -LiteralPath $Dest -Force -ErrorAction SilentlyContinue
+    }
+
+    # --- fresh: clone ------------------------------------------------------
+    if ($haveGit) {
+        $env:GIT_TERMINAL_PROMPT = '0'
+        $env:GCM_INTERACTIVE = 'never'
+        Write-Step "cloning $Owner/$Repo..."
+        & git clone --progress "https://github.com/$Owner/$Repo" $Dest
+        if ((Test-Path -LiteralPath (Join-Path $Dest '.git')) -and (Set-GitPin $Dest $Commit)) {
+            Write-Step "cloned $Owner/$Repo at the pin"
+            exit 0
+        }
+        if (Test-Path -LiteralPath $Dest) {
+            Remove-Item -LiteralPath $Dest -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        Write-Step "clone at the pin did not work; trying a download instead."
+    }
+
+    # --- fresh: zip of the commit -----------------------------------------
+    $hasMarker = { -not $Marker -or (Test-Path -LiteralPath (Join-Path $Dest $Marker)) }
+    if ((Get-ZipPin $Owner $Repo $Commit $Dest) -and (& $hasMarker) -and (Add-ZipSubmodule $Dest)) {
+        Write-Step "unpacked $Repo at the pin"
+        exit 0
+    }
+    if (Test-Path -LiteralPath $Dest) {
+        Remove-Item -LiteralPath $Dest -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    Write-Step "$Owner/$Repo could not be fetched at the pin."
     exit 1
 }
 
