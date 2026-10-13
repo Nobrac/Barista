@@ -27,11 +27,17 @@ public partial class ComponentsPage : UserControl, IWizardPage
 
     public string StepLabel => "Components";
 
-    public string? FooterNote => RbRistretto.IsChecked == true
-        ? "Ristretto needs Doppio installed and an account enrolled before its installer will run."
-        : RbDeny.IsChecked == true
-            ? "No code in lsass with this choice. Nothing here can stop the machine booting."
-            : null;
+    public string? FooterNote =>
+        // Said here rather than discovered later: without the filter the tile
+        // is one option among several, so the second factor is advisory.
+        ChkProvider.IsChecked == true && ChkProviderFilter.IsChecked != true
+            ? "With the filter off, the 2FA tile sits next to the password tile and anyone can "
+              + "pick the password instead. Fine for a first look; it is not enforcement."
+            : RbRistretto.IsChecked == true
+                ? "Ristretto needs Doppio installed and an account enrolled before its installer will run."
+                : RbDeny.IsChecked == true
+                    ? "No code in lsass with this choice. Nothing here can stop the machine booting."
+                    : null;
 
     public bool CanAdvance
     {
@@ -51,6 +57,7 @@ public partial class ComponentsPage : UserControl, IWizardPage
         _state = state;
 
         ChkProvider.IsChecked = state.InstallCredentialProvider;
+        ChkProviderFilter.IsChecked = state.EnableProviderFilter;
         ChkAuthPackage.IsChecked = state.InstallAuthPackage;
         ChkKeepNetwork.IsChecked = state.DenyKeepNetwork;
 
@@ -74,6 +81,13 @@ public partial class ComponentsPage : UserControl, IWizardPage
     public void OnLeaving(SetupState state)
     {
         state.InstallCredentialProvider = ChkProvider.IsChecked == true;
+
+        // Only meaningful with the provider itself: the filter is registered
+        // by install-doppio.ps1 -EnableFilter, which refuses to run until the
+        // provider is in Program Files.
+        state.EnableProviderFilter = ChkProvider.IsChecked == true
+                                     && ChkProviderFilter.IsChecked == true;
+
         state.InstallAuthPackage = ChkAuthPackage.IsChecked == true;
         state.DenyKeepNetwork = ChkKeepNetwork.IsChecked == true;
 
@@ -88,6 +102,7 @@ public partial class ComponentsPage : UserControl, IWizardPage
     {
         if (!_ready) return;        // see _ready
         ChkKeepNetwork.IsEnabled = RbDeny.IsChecked == true;
+        ChkProviderFilter.IsEnabled = ChkProvider.IsChecked == true;
         AdvanceAvailabilityChanged?.Invoke(this, EventArgs.Empty);
     }
 

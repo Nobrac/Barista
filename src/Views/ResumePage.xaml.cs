@@ -101,8 +101,23 @@ public partial class ResumePage : UserControl, IWizardPage
         sb.AppendLine(stage switch
         {
             StageId.Provider =>
-                "The credential provider is registered but nothing is in lsass yet. Safe Mode "
-                + "still works, and unregister.reg removes it.",
+                "The credential provider is registered but nothing is in lsass yet, and the "
+                + "other sign-in options were deliberately left in place by this stage - so the "
+                + "password tile should still work. The button below imports unregister.reg, "
+                + "which removes the registration and the COM entries. Safe Mode still works "
+                + "either way.",
+            StageId.ProviderFilter =>
+                "The filter is registered, so the 2FA tiles are the only ones on the logon "
+                + "screen. If a correct code is being refused, the account may be locked from "
+                + "earlier wrong codes: 'enroll.exe /unlock <user>' from an elevated prompt "
+                + "resets that, and it is worth trying before undoing anything.\n\n"
+                + "If no tile works at all, the button below imports unregister.reg, which "
+                + "deletes the filter registration first and brings the normal password tile "
+                + "back. If you cannot get in to press it: the network paths are still open "
+                + "unless a later stage closed them, so try SMB, WinRM or RDP. Otherwise Safe "
+                + "Mode, or boot WinRE, load the SOFTWARE hive offline and delete the key under "
+                + "Microsoft\\Windows\\CurrentVersion\\Authentication\\Credential Provider "
+                + "Filters - that one deletion is enough and touches nothing else.",
             StageId.NetworkPolicy =>
                 "A sub-authentication filter is registered in the Auth0 slot. If the machine is "
                 + "usable, the uninstall script below clears it. If it is not booting, restore "
@@ -147,7 +162,7 @@ public partial class ResumePage : UserControl, IWizardPage
             Append($"--- {step.Title}");
             try
             {
-                var r = await ProcessRunner.RunScriptAsync(step.Command, step.Arguments, Append);
+                var r = await ProcessRunner.RunStepAsync(step, Append);
                 Append(r.Ok ? "    Done." : $"    FAILED (exit {r.ExitCode}).");
             }
             catch (Exception ex)

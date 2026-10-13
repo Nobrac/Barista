@@ -16,6 +16,15 @@ public enum StepKind
     Script,
     /// <summary>A console tool that needs its own window (enroll.exe).</summary>
     Console,
+    /// <summary>
+    /// A .reg file, imported with reg.exe.
+    ///
+    /// Needed because the only way back out of the credential provider is
+    /// Doppio's unregister.reg, and a .reg file cannot be run by
+    /// "powershell -File". Without this kind, the recovery button told people
+    /// about unregister.reg and then did not run it.
+    /// </summary>
+    RegImport,
 }
 
 /// <summary>
@@ -29,6 +38,13 @@ public enum StageId
     Enrollment = 2,
     NetworkPolicy = 3,
     AuthPackage = 4,
+
+    /// <summary>
+    /// Registering the credential provider filter. Appended rather than
+    /// inserted between 2 and 3, per the note above - the plan's order comes
+    /// from BuildStages, not from these numbers.
+    /// </summary>
+    ProviderFilter = 5,
 }
 
 /// <summary>
@@ -52,18 +68,31 @@ public sealed record Stage(
     /// machine has exactly one new thing on it and you know what it was.
     /// </summary>
     string? VerifyPrompt,
-    string? VerifyDetail);
+    string? VerifyDetail,
+    /// <summary>
+    /// Replaces the generic confirmation text before this stage runs. Used
+    /// where something has to be true on the machine BEFORE the stage, and no
+    /// registry read can establish it - "have you actually signed in with the
+    /// tile yet?" being the one that matters.
+    /// </summary>
+    string? PreRunPrompt = null);
 
 public static class InstallPlan
 {
     /// <summary>
     /// Turns a <see cref="SetupState"/> into ordered stages.
     ///
-    /// Order inside and between stages is not cosmetic. The tile goes in
-    /// before anything denies the other paths, and enrollment happens before
-    /// a filter starts refusing enrolled accounts - otherwise the first
-    /// reboot can leave an account with no way in. Part 1 says it plainly: a
-    /// broken tile plus a denied network logon is a locked machine.
+    /// Order inside and between stages is not cosmetic:
+    ///
+    ///   * The tile is installed before anything denies the other paths.
+    ///   * Enrollment happens before any filter, so the accounts a filter will
+    ///     judge actually have a secret.
+    ///   * The credential provider filter - the thing that removes the
+    ///     password tile - goes in BEFORE the network stages, while a network
+    ///     logon is still a way back into a machine whose tile turns out to be
+    ///     broken. Doing it the other way round means a single bad tile leaves
+    ///     no path in at all, which is the locked machine Part 1 describes.
+    ///   * The authentication package is last, because it closes nothing.
     /// </summary>
     public static List<Stage> BuildStages(SetupState s)
     {
@@ -82,8 +111,10 @@ public static class InstallPlan
                 [
                     new Step(
                         "Install the credential provider",
-                        "Copies TacProvider.dll and enroll.exe to Program Files and registers the "
-                        + "provider and its filter.",
+                        "install-doppio.ps1, with no switches: copies TacProvider.dll and "
+                        + "enroll.exe to Program Files and registers the provider. The other "
+                        + "sign-in options deliberately stay visible - the filter that hides them "
+                        + "is a separate script run, in its own stage further down.",
                         Path.Combine(doppio, "install-doppio.ps1"),
                         [],
                         StepKind.Script),
@@ -91,12 +122,14 @@ public static class InstallPlan
                 RebootAfter: true,
                 VerifyPrompt: "Did the machine come back, and does the 2FA tile appear on the logon screen?",
                 VerifyDetail:
-                    "Lock the screen or sign out and look at the tile before continuing. It should "
-                    + "ask for a password and a one-time code, and the other sign-in options should "
-                    + "be gone.\n\n"
-                    + "If it does not look right, stop here. Nothing has been put into lsass yet, so "
-                    + "Safe Mode still gets you in and the registration can be removed with "
-                    + "unregister.reg."));
+                    "Lock the screen or sign out and look under \"Sign-in options\". The 2FA tile "
+                    + "should be there NEXT TO the usual ones - password, PIN, Hello. The other "
+                    + "options are supposed to still work at this point; nothing has been hidden "
+                    + "yet, and nobody is enrolled yet either, so the tile itself cannot be tested "
+                    + "until the next stage.\n\n"
+                    + "If the tile is missing altogether, stop here. Nothing has been put into "
+                    + "lsass, Safe Mode still gets you in, and the recovery button below imports "
+                    + "unregister.reg to remove the registration."));
         }
 
         // --- 2. enrollment --------------------------------------------------
@@ -132,15 +165,67 @@ public static class InstallPlan
             stages.Add(new Stage(
                 StageId.Enrollment,
                 "Enrollment",
-                "No reboot needed. This has to happen before any filter, so the accounts the "
-                + "filter will judge actually have a secret.",
+                "No reboot needed - enroll.exe is an ordinary user-mode tool. This has to happen "
+                + "before any filter, so the accounts a filter will judge actually have a secret.",
                 enrollSteps,
                 RebootAfter: false,
                 VerifyPrompt: null,
                 VerifyDetail: null));
         }
 
-        // --- 3. the non-interactive paths -----------------------------------
+        // --- 3. the filter that makes the tile the only option --------------
+        // Separately from stage 1 because it is a separate script run with a
+        // separate failure mode: stage 1 at worst costs a tile, this one can
+        // cost the console.
+        if (s.InstallCredentialProvider && s.EnableProviderFilter)
+        {
+            stages.Add(new Stage(
+                StageId.ProviderFilter,
+                "Make the 2FA tile the only way in",
+                "install-doppio.ps1 -EnableFilter imports register-filter.reg, which hides the "
+                + "password, PIN and Hello tiles. Until this runs the tile is only ever offered "
+                + "alongside them, so anyone can pick one of those and skip the code entirely. "
+                + "It runs before the network stages on purpose: if the tile turns out to be "
+                + "broken, a network logon is still a way in.",
+                [
+                    new Step(
+                        "Register the credential provider filter",
+                        "The script checks first that every enabled local account has a stored "
+                        + "secret, and refuses otherwise - an unenrolled account could not sign in "
+                        + "at all once the filter is on, because its tile has nothing to check "
+                        + "and the tiles it used before are gone.",
+                        Path.Combine(doppio, "install-doppio.ps1"),
+                        ["-EnableFilter"],
+                        StepKind.Script),
+                ],
+                RebootAfter: true,
+                VerifyPrompt: "Did the machine come back, and can you sign in with only the 2FA tile?",
+                VerifyDetail:
+                    "NOW the other sign-in options should be gone. The logon and unlock screens "
+                    + "should show only 2FA tiles, asking for a password and a one-time code, with "
+                    + "no password-only option left anywhere.\n\n"
+                    + "If a correct code is refused, the account may be locked from earlier wrong "
+                    + "codes. From an elevated prompt: enroll.exe /unlock <user>.\n\n"
+                    + "If no tile works at all, this is the locked-console case. The network paths "
+                    + "are still open at this point - the network stages come after this one - so "
+                    + "SMB, WinRM or RDP may still get you in. Failing that: Safe Mode, or boot "
+                    + "WinRE, load the SOFTWARE hive offline and delete the key under "
+                    + "Microsoft\\Windows\\CurrentVersion\\Authentication\\Credential Provider "
+                    + "Filters. That single deletion brings the normal tiles back and leaves "
+                    + "everything else alone. Restoring the snapshot also works.",
+                PreRunPrompt:
+                    "This removes every other way of signing in at the console.\n\n"
+                    + "Before you run it, test what is about to become the only option: sign out "
+                    + "and sign back in with EACH enrolled account using the 2FA tile. The "
+                    + "password tile is still there to catch you if a code does not work - after "
+                    + "this stage it is not.\n\n"
+                    + "You can close this tool to do that. Every finished stage is written to "
+                    + "disk, so starting it again picks up here.\n\n"
+                    + "Have you signed in through the 2FA tile with every account that needs to "
+                    + "get into this machine?"));
+        }
+
+        // --- 4. the non-interactive paths -----------------------------------
         switch (s.Network)
         {
             case NetworkPolicy.DenyRights:
@@ -240,7 +325,7 @@ public static class InstallPlan
             }
         }
 
-        // --- 4. the authentication package ----------------------------------
+        // --- 5. the authentication package ----------------------------------
         // Last, because it is the one that closes nothing.
         if (s.InstallAuthPackage)
         {
@@ -304,7 +389,21 @@ public static class InstallPlan
         }
     }
 
-    /// <summary>The reverse, for the recovery path.</summary>
+    /// <summary>
+    /// The reverse, for the recovery path.
+    ///
+    /// Built from what is actually registered on this machine, not from what
+    /// the user set out to install. Those are different things the moment a
+    /// stage fails, and the earlier version of this method used the plan:
+    /// after a failed credential-provider stage it offered to remove the
+    /// authentication package - which had never been installed - and offered
+    /// nothing for the provider, which had. Every branch here therefore asks
+    /// the registry first.
+    ///
+    /// Order is deregistration order: the things that can stop a machine
+    /// booting go first, then the things that can stop a logon, then the user
+    /// rights, which cannot do either.
+    /// </summary>
     public static List<Step> BuildUninstall(SetupState s)
     {
         var steps = new List<Step>();
@@ -312,8 +411,7 @@ public static class InstallPlan
         var ristretto = s.RistrettoDir ?? "";
         var auth0 = Preflight.CurrentAuth0();
 
-        // Deregister in the opposite order, LSA components first: those are
-        // the ones that can stop a machine booting, so they go away earliest.
+        // --- 1. whatever is in the Auth0 slot -------------------------------
         if (auth0 == "RistrettoFilter" && ristretto.Length > 0)
         {
             steps.Add(new Step(
@@ -333,7 +431,8 @@ public static class InstallPlan
                 StepKind.Script));
         }
 
-        if (doppio.Length > 0)
+        // --- 2. the authentication package ----------------------------------
+        if (doppio.Length > 0 && Preflight.AuthPackageRegistered())
         {
             steps.Add(new Step(
                 "Remove the authentication package",
@@ -341,6 +440,45 @@ public static class InstallPlan
                 Path.Combine(doppio, "uninstall-authpackage.ps1"),
                 [],
                 StepKind.Script));
+        }
+
+        // --- 3. the credential provider and its filter ----------------------
+        // One import does both, plus the COM registration and the event
+        // source. Safe to run when only some of it is registered: the file
+        // deletes keys, and reg.exe does not mind a key that is not there.
+        var unregister = Path.Combine(doppio, "unregister.reg");
+        var providerPresent = Preflight.ProviderFilterRegistered() || Preflight.ProviderRegistered();
+        if (doppio.Length > 0 && (providerPresent || s.InstallCredentialProvider)
+            && File.Exists(unregister))
+        {
+            steps.Add(new Step(
+                "Remove the credential provider and its filter",
+                "Imports unregister.reg: deletes the filter registration first, so the normal "
+                + "password tile comes back, then the provider and its COM registration. The "
+                + "enrolled secrets under HKLM\\SOFTWARE\\TheAdminCafe are NOT touched - run "
+                + "'enroll.exe /purge' by hand if you want those gone too.",
+                unregister,
+                [],
+                StepKind.RegImport));
+        }
+
+        // --- 4. the deny rights ---------------------------------------------
+        // Last, and separately, because these are the only changes here that
+        // outlive an uninstall silently: no DLL, no registry key anybody
+        // notices, just an account that cannot reach a share any more.
+        var denyScript = Path.Combine(doppio, "deny-noninteractive.ps1");
+        if (doppio.Length > 0 && s.Network is NetworkPolicy.DenyRights && File.Exists(denyScript))
+        {
+            foreach (var account in s.AccountsToDeny)
+            {
+                steps.Add(new Step(
+                    $"Restore non-interactive logons for '{account}'",
+                    "deny-noninteractive.ps1 -Remove. Takes the account back out of the "
+                    + "'Deny log on' rights it was added to.",
+                    denyScript,
+                    [account, "-Remove"],
+                    StepKind.Script));
+            }
         }
 
         return steps;

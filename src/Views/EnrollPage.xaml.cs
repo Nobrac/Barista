@@ -10,19 +10,60 @@ namespace Barista.Views;
 
 public partial class EnrollPage : UserControl, IWizardPage
 {
+    /// <summary>
+    /// One row. Enrolling and denying are separate flags on purpose.
+    ///
+    /// They used to be one: whatever was ticked here was written into both
+    /// AccountsToEnroll and AccountsToDeny, with a comment saying the lists
+    /// were the same and asking twice was redundant. They are not the same.
+    /// Doppio's own deny-noninteractive.ps1 says to "keep a second admin
+    /// account that still works", and the filter stage requires every enabled
+    /// local account to be enrolled - so the break-glass admin has to be
+    /// enrolled, and coupling the lists meant it was then also denied. That is
+    /// precisely the account that must keep a path in.
+    /// </summary>
     public sealed class Account : INotifyPropertyChanged
     {
-        private bool _selected;
+        private bool _enroll;
+        private bool _deny;
+        private bool _denyApplies = true;
+
         public required string Name { get; init; }
-        public bool Selected
+
+        /// <summary>Run enroll.exe for this account.</summary>
+        public bool Enroll
         {
-            get => _selected;
-            set { _selected = value; PropertyChanged?.Invoke(this, new(nameof(Selected))); }
+            get => _enroll;
+            set { _enroll = value; Raise(nameof(Enroll)); }
         }
+
+        /// <summary>Apply deny-noninteractive.ps1 to this account.</summary>
+        public bool Deny
+        {
+            get => _deny;
+            set { _deny = value; Raise(nameof(Deny)); }
+        }
+
+        /// <summary>
+        /// False when the chosen network policy is not the deny rights, in
+        /// which case the column is greyed out rather than silently ignored.
+        /// </summary>
+        public bool DenyApplies
+        {
+            get => _denyApplies;
+            set { _denyApplies = value; Raise(nameof(DenyApplies)); }
+        }
+
         public event PropertyChangedEventHandler? PropertyChanged;
+
+        private void Raise(string property)
+            => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(property));
     }
 
     private readonly List<Account> _accounts = [];
+
+    /// <summary>Held so the lockout warning can be recomputed as boxes are ticked.</summary>
+    private SetupState? _state;
 
     /// <summary>
     /// False until InitializeComponent has finished. The TextChanged handler
@@ -49,30 +90,93 @@ public partial class EnrollPage : UserControl, IWizardPage
 
     public void OnEntering(SetupState state)
     {
+        _state = state;
+
         if (_accounts.Count == 0)
         {
             foreach (var n in Preflight.LocalUserNames())
-                _accounts.Add(new Account { Name = n });
+                _accounts.Add(NewAccount(n));
 
             NoAccounts.Visibility = _accounts.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             AccountList.ItemsSource = _accounts;
         }
 
+        var denyApplies = state.Network is NetworkPolicy.DenyRights;
+
         foreach (var a in _accounts)
-            a.Selected = state.AccountsToEnroll.Contains(a.Name, StringComparer.OrdinalIgnoreCase);
+        {
+            a.Enroll = state.AccountsToEnroll.Contains(a.Name, StringComparer.OrdinalIgnoreCase);
+            a.Deny = denyApplies
+                     && state.AccountsToDeny.Contains(a.Name, StringComparer.OrdinalIgnoreCase);
+            a.DenyApplies = denyApplies;
+        }
+
+        ColumnHelp.Text = denyApplies
+            ? "Two separate decisions per account. Enrol the break-glass admin so the 2FA tile "
+              + "will accept it, and leave its deny column clear so it keeps a path in."
+            : "The deny column is off because you chose a filter rather than the deny rights. "
+              + "A filter judges accounts by enrollment, so the 2FA column is the only one that "
+              + "matters here.";
+
+        UpdateLockoutWarning(state);
+        AdvanceAvailabilityChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public void OnLeaving(SetupState state)
     {
-        var chosen = _accounts.Where(a => a.Selected).Select(a => a.Name).ToList();
-
         state.AccountsToEnroll.Clear();
-        state.AccountsToEnroll.AddRange(chosen);
+        state.AccountsToEnroll.AddRange(_accounts.Where(a => a.Enroll).Select(a => a.Name));
 
-        // The deny rights and the filters apply per account, and the account
-        // list is the same one. Carrying it over beats asking twice.
         state.AccountsToDeny.Clear();
-        state.AccountsToDeny.AddRange(chosen);
+        if (state.Network is NetworkPolicy.DenyRights)
+            state.AccountsToDeny.AddRange(_accounts.Where(a => a.Deny).Select(a => a.Name));
+    }
+
+    /// <summary>
+    /// Subscribes as it creates, so the warning below tracks the boxes rather
+    /// than only the state of the page when it was opened. Subscribing here
+    /// and not in OnEntering also means navigating back and forth does not
+    /// attach the handler twice.
+    /// </summary>
+    private Account NewAccount(string name)
+    {
+        var account = new Account { Name = name };
+        account.PropertyChanged += (_, _) =>
+        {
+            if (_state is not null) UpdateLockoutWarning(_state);
+        };
+        return account;
+    }
+
+    /// <summary>
+    /// Says so when the current selection leaves nothing that can get in
+    /// without the tile. Not a block - there are legitimate reasons to lock a
+    /// lab VM down completely - but it should never happen by accident.
+    /// </summary>
+    private void UpdateLockoutWarning(SetupState state)
+    {
+        if (!_ready) return;
+
+        var denyApplies = state.Network is NetworkPolicy.DenyRights;
+        var filterComing = state.InstallCredentialProvider && state.EnableProviderFilter;
+
+        string? warning = null;
+
+        if (denyApplies && _accounts.Count > 0 && _accounts.All(a => a.Deny))
+        {
+            warning = "Every account listed is set to lose its non-interactive logons. Nothing "
+                      + "will be able to reach this machine over the network afterwards, so a "
+                      + "broken tile leaves only Safe Mode and the snapshot.";
+        }
+        else if (filterComing && _accounts.Count > 0 && _accounts.All(a => !a.Enroll))
+        {
+            warning = "No account is selected for enrollment, but the filter stage is in the "
+                      + "plan. It will refuse to run: with the tile as the only sign-in option, "
+                      + "an account without a secret cannot sign in at all.";
+        }
+
+        LockoutWarning.Text = warning ?? "";
+        LockoutWarning.Visibility = warning is null ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void OnAddManual(object sender, RoutedEventArgs e)
@@ -85,7 +189,14 @@ public partial class EnrollPage : UserControl, IWizardPage
             return;
         }
 
-        _accounts.Add(new Account { Name = name, Selected = true });
+        // Enrolled but not denied: adding an account by hand is overwhelmingly
+        // the break-glass case, and denying should never be the default of
+        // anything.
+        var account = NewAccount(name);
+        account.Enroll = true;
+        account.DenyApplies = _accounts.FirstOrDefault()?.DenyApplies ?? true;
+        _accounts.Add(account);
+
         AccountList.ItemsSource = null;
         AccountList.ItemsSource = _accounts;
         NoAccounts.Visibility = Visibility.Collapsed;

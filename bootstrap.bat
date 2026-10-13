@@ -7,7 +7,9 @@ rem  everything else is fetched and built beside it. It will:
 rem
 rem    1. elevate itself
 rem    2. install git, the .NET 10 SDK and the MSVC build tools if missing
-rem    3. clone Doppio and Ristretto if they are not already beside it
+rem    3. fetch Doppio and Ristretto from github.com/Nobrac if they are not
+rem       already beside it - a clone where git can, a release or branch zip
+rem       where it cannot
 rem    4. pull the Doppio submodule Ristretto needs
 rem    5. build all three projects
 rem    6. launch the setup wizard
@@ -17,8 +19,11 @@ rem    - take the VM snapshot (a VM cannot snapshot itself; that is the host)
 rem    - type the code off your phone
 rem    - decide whether to turn RunAsPPL off
 rem
-rem  Flags:  /nodeps   do not install anything with winget
-rem          /noclone  do not clone; use the folders that are already here
+rem  Flags:  /nodeps              do not install anything with winget
+rem          /noclone             do not fetch; use the folders already here
+rem          /update              bring existing clones up to date (git pull)
+rem          /doppio-ref=<ref>    pin Doppio to a tag or branch
+rem          /ristretto-ref=<ref> pin Ristretto to a tag or branch
 rem
 rem  Note on structure: every check lives in a subroutine that returns an exit
 rem  code, and the main flow is flat `call :x || goto :fail`. Jumping out of a
@@ -71,10 +76,38 @@ exit /b 1
 
 set NODEPS=
 set NOCLONE=
-for %%a in (%*) do (
-    if /i "%%a"=="/nodeps"  set NODEPS=1
-    if /i "%%a"=="/noclone" set NOCLONE=1
-)
+set UPDATE=
+set DOPPIOREF=
+set RISTRETTOREF=
+
+rem Parsed with shift and not `for %%a in (%*)`, because a plain FOR treats
+rem `=` as a separator in its set: /doppio-ref=v1.0 would arrive as two
+rem tokens and the value would be lost. %1 is safe to consume here - the
+rem elevation above is done with it, and nothing below reads it again.
+:parseargs
+if "%~1"=="" goto :argsdone
+if /i "%~1"=="/nodeps"   set NODEPS=1
+if /i "%~1"=="/noclone"  set NOCLONE=1
+if /i "%~1"=="/update"   set UPDATE=1
+rem /elevated is the sentinel the relaunch above passes to itself. It is
+rem matched by nothing here on purpose; falling through is what should happen.
+set "ARG=%~1"
+if /i "!ARG:~0,12!"=="/doppio-ref="    set "DOPPIOREF=!ARG:~12!"
+if /i "!ARG:~0,15!"=="/ristretto-ref=" set "RISTRETTOREF=!ARG:~15!"
+shift
+goto :parseargs
+:argsdone
+set "ARG="
+
+rem The downloader. Kept out of this file because it does real work - a
+rem ladder of clone, release and branch-zip, each with a progress bar - and
+rem batch is the wrong language for an HTTP stream read in a loop.
+set "FETCH=%ROOT%tools\fetch-from-github.ps1"
+
+rem -Ref for a single file is the branch, so a tag pinned for the repository
+rem is not reusable here; only an explicit branch is.
+set "DOPPIOFILEREF="
+if defined DOPPIOREF set "DOPPIOFILEREF=-Ref %DOPPIOREF%"
 
 set FAILMSG=
 set REBOOTPENDING=
@@ -223,73 +256,116 @@ rem  Sources
 rem ===========================================================================
 
 :get_sources
-if not defined NOCLONE call :clone_missing
-
-if not exist "Doppio\build.bat"               (set FAILMSG=nodoppio& exit /b 1)
+rem Everything the three builds need is fetched here. Doppio and Ristretto
+rem come from GitHub; nothing below expects a human to have downloaded
+rem anything first. tools\fetch-from-github.ps1 walks clone -> latest release
+rem -> default-branch zip and says which rung worked, so this stays a flat
+rem "did it arrive or not".
 if not exist "src\Barista.csproj" (set FAILMSG=nosetup& exit /b 1)
-rem install-doppio.ps1 is the stage-1 script the wizard calls. It is new and
-rem may not be committed to Doppio yet, so a copy sitting next to this file is
-rem put in place. One already in the repo always wins: that is the version
-rem under version control.
-if exist "install-doppio.ps1" (
-    if not exist "Doppio\install-doppio.ps1" (
-        copy /y "install-doppio.ps1" "Doppio\install-doppio.ps1" >nul
-        echo [src] placed install-doppio.ps1 into Doppio\
-    )
+if not exist "%FETCH%" (set FAILMSG=nofetcher& exit /b 1)
+
+if not defined NOCLONE (
+    call :fetch_repo Doppio build.bat
+    rem Ristretto is optional. A repository that is private, unpublished or
+    rem renamed answers 404 to an anonymous fetch exactly as a missing one
+    rem does, so a failure here is "not available" and not an error.
+    call :fetch_repo Ristretto build-ristretto.bat
+) else (
+    echo [src] /noclone - using the folders that are already here.
 )
-if not exist "Doppio\install-doppio.ps1" (set FAILMSG=noinstallscript& exit /b 1)
+
+if not exist "Doppio\build.bat" (set FAILMSG=nodoppio& exit /b 1)
+
+call :ensure_install_script || exit /b 1
+
 set HAVERISTRETTO=
 if exist "Ristretto\build-ristretto.bat" set HAVERISTRETTO=1
-if defined HAVERISTRETTO call :fetch_submodule
+if defined HAVERISTRETTO (
+    call :fetch_submodule
+) else (
+    echo [src] Ristretto is not here - building Doppio only.
+    echo       Pass /ristretto-ref=^<tag^> if you have access to a specific
+    echo       release, or unpack it into a folder called Ristretto beside
+    echo       this file and run again.
+)
 
 echo [src] sources ok
 exit /b 0
 
-:clone_missing
-if not exist "Doppio\build.bat" (
-    if exist "Doppio" (
-        echo [src] A folder called Doppio is here but has no build.bat - leaving it alone.
-    ) else (
-        echo [src] Cloning Doppio...
-        git clone --quiet https://github.com/Nobrac/Doppio Doppio
-    )
-)
-rem Ristretto is optional, and at the time of writing it is not published yet.
-rem An anonymous clone of a repository that does not exist fails the same way a
-rem private one does, so this treats a failure as "not available" and moves on
-rem rather than making it look like a permissions problem.
-if not exist "Ristretto\build-ristretto.bat" (
-    if exist "Ristretto" (
-        echo [src] A folder called Ristretto is here but has no build script - leaving it alone.
-    ) else (
-        echo [src] Trying to clone Ristretto...
-        git clone --quiet https://github.com/Nobrac/Ristretto Ristretto 2>nul
-        if not exist "Ristretto\build-ristretto.bat" (
-            rmdir /s /q Ristretto 2>nul
-            echo [src] Ristretto is not available from GitHub. Skipping it.
-            echo       To include it, unpack Ristretto.zip into a folder called
-            echo       Ristretto beside this file and run again.
-        )
-    )
-)
+
+rem --- one repository --------------------------------------------------------
+rem %1 = repository name under github.com/Nobrac, and the folder it lands in
+rem %2 = a file that must exist inside it afterwards
+rem
+rem Deliberately has no failure path of its own. Whether a missing repository
+rem is fatal is the caller's question - Doppio is, Ristretto is not - and it
+rem is answered by the `if not exist` checks above, against the same marker
+rem file the build then uses. One place decides what "present" means.
+:fetch_repo
+set "REF="
+if /i "%~1"=="Ristretto" if defined RISTRETTOREF set "REF=-Ref %RISTRETTOREF%"
+if /i "%~1"=="Doppio"    if defined DOPPIOREF    set "REF=-Ref %DOPPIOREF%"
+
+set "UPD="
+if defined UPDATE set "UPD=-Update"
+
+echo [src] %~1...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%FETCH%" ^
+    -Owner Nobrac -Repo "%~1" -Dest "%ROOT%%~1" -Marker "%~2" !REF! !UPD!
 exit /b 0
 
+
+rem --- install-doppio.ps1 ----------------------------------------------------
+rem The stage-1 script the wizard runs. It lives in Doppio, but a checkout that
+rem predates it will not have it, and the wizard's preflight blocks without it
+rem (Preflight.DoppioCoreFiles). Three places are tried, in order of how
+rem trustworthy the copy is:
+rem
+rem   1. the one already in Doppio\      - under version control, always wins
+rem   2. a copy beside this bootstrap    - what a zip release of Barista ships
+rem   3. Doppio's default branch on raw  - for an older clone
+rem
+rem Fetching it on its own rather than re-cloning Doppio matters: by this point
+rem Doppio may already be built, and throwing that away to pick up one 4 KB
+rem script would mean another MSVC run.
+:ensure_install_script
+if exist "Doppio\install-doppio.ps1" exit /b 0
+
+if exist "install-doppio.ps1" (
+    copy /y "install-doppio.ps1" "Doppio\install-doppio.ps1" >nul
+    echo [src] placed install-doppio.ps1 into Doppio\
+    exit /b 0
+)
+
+echo [src] install-doppio.ps1 is not in the Doppio checkout - fetching it...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%FETCH%" ^
+    -Owner Nobrac -Repo Doppio -Dest "%ROOT%Doppio" -File install-doppio.ps1 !DOPPIOFILEREF!
+
+if exist "Doppio\install-doppio.ps1" exit /b 0
+set FAILMSG=noinstallscript
+exit /b 1
+
+
+rem --- the Doppio sources Ristretto links in --------------------------------
 :fetch_submodule
 if exist "Ristretto\extern\doppio\verify.cpp" exit /b 0
 
 rem Two ways Ristretto can be here. A clone is a git repository and the
-rem submodule command works. An unpacked zip is NOT a repository, and
-rem `git submodule update` there fails with "not a git repository" - so in that
-rem case the sources are copied straight out of the Doppio folder next door.
-rem That also guarantees the two halves are built from the same Doppio.
+rem submodule command works. A downloaded zip is NOT a repository - GitHub
+rem source archives do not contain submodule contents - and `git submodule
+rem update` there fails with "not a git repository", so in that case the
+rem sources are copied straight out of the Doppio folder next door. That also
+rem guarantees the two halves are built from the same Doppio.
 if exist "Ristretto\.git" (
     echo [src] Fetching the Doppio submodule for Ristretto...
     pushd Ristretto
     git submodule update --init --recursive --quiet
     popd
-) else (
-    echo [src] Ristretto is not a git clone, so copying the Doppio sources
-    echo       it links into Ristretto\extern\doppio\ ...
+)
+
+if not exist "Ristretto\extern\doppio\verify.cpp" (
+    echo [src] Copying the Doppio sources Ristretto links into
+    echo       Ristretto\extern\doppio\ ...
     if not exist "Ristretto\extern\doppio" mkdir "Ristretto\extern\doppio"
     copy /y "Doppio\*.cpp" "Ristretto\extern\doppio\" >nul 2>&1
     copy /y "Doppio\*.h"   "Ristretto\extern\doppio\" >nul 2>&1
@@ -386,8 +462,12 @@ if "%FAILMSG%"=="msvc" (
     echo   this again.
 )
 if "%FAILMSG%"=="nodoppio" (
-    echo   No Doppio\build.bat here. Either let this clone it, or put the
-    echo   Doppio repository in a folder called Doppio beside this file.
+    echo   No Doppio\build.bat here, and Doppio could not be fetched from
+    echo   github.com/Nobrac/Doppio. The lines above say which of clone,
+    echo   release and zip was tried and how each one answered.
+    echo.
+    echo   If this machine has no way out to GitHub, put the Doppio repository
+    echo   in a folder called Doppio beside this file and run with /noclone.
 )
 if "%FAILMSG%"=="nosetup" (
     echo   No src\Barista.csproj here.
@@ -400,10 +480,23 @@ if "%FAILMSG%"=="nosetup" (
     echo   inner one up a level.
 )
 if "%FAILMSG%"=="noinstallscript" (
-    echo   Doppio\install-doppio.ps1 is missing and no copy was found beside
-    echo   this file. The wizard calls it as its first stage.
+    echo   Doppio\install-doppio.ps1 is missing. The wizard calls it as its
+    echo   first stage, so the install cannot start without it.
     echo.
-    echo   Put install-doppio.ps1 next to this bootstrap and run again.
+    echo   It was looked for in the Doppio checkout, beside this file, and on
+    echo   Doppio's default branch on GitHub. If this machine has no way out
+    echo   to raw.githubusercontent.com, download it by hand and put it next
+    echo   to this bootstrap, then run again.
+)
+if "%FAILMSG%"=="nofetcher" (
+    echo   tools\fetch-from-github.ps1 is missing. That is the script that
+    echo   fetches Doppio and Ristretto, and it ships with Barista.
+    echo.
+    echo   Expected at:
+    echo       %ROOT%tools\fetch-from-github.ps1
+    echo.
+    echo   If you copied bootstrap.bat out of the repository on its own, take
+    echo   the tools\ folder with it - or clone Barista instead.
 )
 if "%FAILMSG%"=="vcvars" (
     echo   vcvars64.bat failed. The C++ toolset looks installed but is not

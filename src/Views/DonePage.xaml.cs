@@ -34,6 +34,13 @@ public partial class DonePage : UserControl, IWizardPage
         RebootCard.Visibility = state.NeedsReboot ? Visibility.Visible : Visibility.Collapsed;
         GateCard.Visibility = state.Network == NetworkPolicy.RistrettoGate
             ? Visibility.Visible : Visibility.Collapsed;
+
+        // Shown whenever a tile is in play, and emphatically when it is the
+        // only one: a lockout from wrong codes is indistinguishable from a
+        // broken provider unless somebody has been told about /unlock.
+        EnrollCard.Visibility = state.InstallCredentialProvider
+            ? Visibility.Visible : Visibility.Collapsed;
+
         PplButton.IsEnabled = Preflight.RunAsPpl() is null or 0;
     }
 
@@ -79,8 +86,12 @@ public partial class DonePage : UserControl, IWizardPage
         }
 
         var answer = MessageBox.Show(
-            $"This runs {steps.Count} uninstall script(s): the LSA components are deregistered "
-            + "first, because those are the ones that can stop a machine booting.\n\n"
+            $"This runs {steps.Count} step(s), built from what is actually registered on this "
+            + "machine right now:\n\n"
+            + string.Join("\n", steps.Select(s => "  • " + s.Title))
+            + "\n\nIn that order, deliberately - the things that can stop a machine booting go "
+            + "first, then the logon screen, then the user rights.\n\n"
+            + "The enrolled secrets are NOT removed; 'enroll.exe /purge' does that.\n\n"
             + "Afterwards: reboot, and only THEN delete the DLLs from System32. lsass holds "
             + "them until it restarts.\n\nContinue?",
             "Uninstall", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
@@ -101,7 +112,7 @@ public partial class DonePage : UserControl, IWizardPage
             Append($"=== {step.Title}");
             try
             {
-                var r = await ProcessRunner.RunScriptAsync(step.Command, step.Arguments, Append);
+                var r = await ProcessRunner.RunStepAsync(step, Append);
                 Append(r.Ok ? "    Done." : $"    FAILED (exit {r.ExitCode}).");
             }
             catch (Exception ex)

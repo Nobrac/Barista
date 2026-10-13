@@ -35,6 +35,23 @@
       </StackPanel>
     </Border>
 
+    <Border x:Name="EnrollCard" Style="{StaticResource CardBorder}" Visibility="Collapsed">
+      <StackPanel>
+        <TextBlock FontWeight="SemiBold" Text="When a code is refused"/>
+        <TextBlock Margin="0,6,0,10" MaxWidth="640">
+          The likeliest thing to go wrong from here is not a bugcheck, it is a locked account
+          after a few wrong codes — and with the tile as the only sign-in option that looks
+          exactly like a broken tile. From an elevated prompt, next to TacProvider.dll:
+        </TextBlock>
+        <TextBlock FontFamily="Consolas" FontSize="12" Foreground="{StaticResource Muted}"><Run Text="enroll.exe /unlock alice   clear a lockout from wrong codes"/><LineBreak/><Run Text="enroll.exe /list           who is enrolled"/><LineBreak/><Run Text="enroll.exe alice           re-enrol (issues a NEW secret)"/><LineBreak/><Run Text="enroll.exe /remove alice   drop one account's secret"/></TextBlock>
+        <TextBlock Margin="0,10,0,0" MaxWidth="640" Foreground="{StaticResource Muted}">
+          Re-enrolling replaces the secret, which silently invalidates whatever is already in the
+          authenticator app. Unlock first; re-enrol only if you mean to scan a new code. A clock
+          more than a step out of sync looks like a wrong code too.
+        </TextBlock>
+      </StackPanel>
+    </Border>
+
     <Border x:Name="GateCard" Style="{StaticResource CardBorder}" Visibility="Collapsed">
       <StackPanel>
         <TextBlock FontWeight="SemiBold" Text="Using the gate"/>

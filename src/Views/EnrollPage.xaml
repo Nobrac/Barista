@@ -10,15 +10,47 @@
 
     <Border Style="{StaticResource CardBorder}">
       <StackPanel>
-        <TextBlock FontWeight="SemiBold" Margin="0,0,0,8" Text="Local accounts on this machine"/>
+        <TextBlock FontWeight="SemiBold" Margin="0,0,0,4" Text="Local accounts on this machine"/>
+        <TextBlock x:Name="ColumnHelp" Margin="0,0,0,10" FontSize="12"
+                   Foreground="{StaticResource Muted}" MaxWidth="620"
+                   Text="Two separate decisions per account. They are not the same choice and this page does not treat them as one."/>
+
+        <Grid Margin="0,0,0,6">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="90"/>
+            <ColumnDefinition Width="130"/>
+          </Grid.ColumnDefinitions>
+          <TextBlock Grid.Column="0" Text="Account" FontSize="11.5" FontWeight="SemiBold"
+                     Foreground="{StaticResource Muted}"/>
+          <TextBlock Grid.Column="1" Text="2FA tile" FontSize="11.5" FontWeight="SemiBold"
+                     Foreground="{StaticResource Muted}" HorizontalAlignment="Center"/>
+          <TextBlock Grid.Column="2" Text="Deny non-interactive" FontSize="11.5"
+                     FontWeight="SemiBold" Foreground="{StaticResource Muted}"
+                     HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"/>
+        </Grid>
+        <Border Height="1" Background="{StaticResource Line}" Margin="0,0,0,8"/>
+
         <ItemsControl x:Name="AccountList">
           <ItemsControl.ItemTemplate>
             <DataTemplate>
-              <CheckBox Content="{Binding Name}" IsChecked="{Binding Selected, Mode=TwoWay}"
-                        Margin="0,0,0,6"/>
+              <Grid Margin="0,0,0,7">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="90"/>
+                  <ColumnDefinition Width="130"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="{Binding Name}" VerticalAlignment="Center"/>
+                <CheckBox Grid.Column="1" IsChecked="{Binding Enroll, Mode=TwoWay}"
+                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <CheckBox Grid.Column="2" IsChecked="{Binding Deny, Mode=TwoWay}"
+                          IsEnabled="{Binding DenyApplies}"
+                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              </Grid>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
+
         <TextBlock x:Name="NoAccounts" Visibility="Collapsed" Foreground="{StaticResource Muted}"
                    Text="Could not list local accounts. Type a name below instead."/>
         <Grid Margin="0,8,0,0">
@@ -38,10 +70,14 @@
       <StackPanel>
         <TextBlock FontWeight="SemiBold" Text="Keep a way back in"/>
         <TextBlock Margin="0,6,0,0" MaxWidth="640">
-          Leave at least one administrator account unenrolled and not denied, on a machine where
-          you are about to put a filter in the logon path. A broken tile plus a denied network
-          logon is a locked machine, and the snapshot is then the only way back.
+          Enrolling an account and closing its other logon paths are different things, and the
+          break-glass admin wants the first without the second: enrolled, so the 2FA tile accepts
+          it once the tile is the only option, but not denied, so SMB, WinRM or RDP still get you
+          in if that tile turns out to be broken. A broken tile plus a denied network logon is a
+          locked machine, and the snapshot is then the only way back.
         </TextBlock>
+        <TextBlock x:Name="LockoutWarning" Margin="0,10,0,0" MaxWidth="640" Visibility="Collapsed"
+                   FontWeight="SemiBold" Foreground="{StaticResource Danger}"/>
       </StackPanel>
     </Border>
 

@@ -1,5 +1,3 @@
-using System.IO;
-using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -7,64 +5,74 @@ using Barista.Services;
 
 namespace Barista.Views;
 
+/// <summary>
+/// The staged install, on screen.
+///
+/// Everything this page does is show and ask. What actually runs, in what
+/// order, what counts as a failure and what gets written to disk is
+/// <see cref="StageRunner"/> - which is in the core assembly, where it can be
+/// tested without a window. The dialogs stayed here, because a confirmation is
+/// the one part that genuinely needs a person looking at a screen.
+/// </summary>
 public partial class InstallPage : UserControl, IWizardPage
 {
     private SetupState? _state;
-    private List<Stage> _stages = [];
-    private readonly List<StageId> _done = [];
-    private readonly StringBuilder _log = new();
+    private StageRunner? _runner;
 
     /// <summary>Set when a run is resumed, so earlier stages are not re-run.</summary>
     private PersistedState? _resumed;
 
-    /// <summary>The stage that just finished and needs a reboot before the next one.</summary>
-    private Stage? _awaitingReboot;
-
-    public bool IsRunning { get; private set; }
+    public bool IsRunning => _runner?.IsRunning == true;
 
     public InstallPage() => InitializeComponent();
 
-    /// <summary>Called before the page is first entered, when this is a resumed run.</summary>
-    public void AdoptResumedRun(PersistedState persisted)
-    {
-        _resumed = persisted;
-        _done.Clear();
-        _done.AddRange(persisted.CompletedStages);
-        _log.Clear();
-        if (persisted.Log.Length > 0)
-        {
-            _log.Append(persisted.Log);
-            if (!persisted.Log.EndsWith('\n')) _log.AppendLine();
-            _log.AppendLine("=== Resumed after restart");
-            _log.AppendLine();
-        }
-    }
+    /// <summary>
+    /// Called before the page is first entered, when this is a resumed run.
+    /// The record is kept until <see cref="OnEntering"/>, because the runner
+    /// needs the state object and that only arrives with the page.
+    /// </summary>
+    public void AdoptResumedRun(PersistedState persisted) => _resumed = persisted;
 
     public string StepLabel => "Install";
 
     public string? FooterNote => IsRunning
         ? "Running. Do not reboot or close this window."
-        : _awaitingReboot is not null
+        : _runner?.AwaitingReboot is not null
             ? "This stage is done but not loaded. Restart before the next one."
-            : AllDone ? null : "Nothing has been changed yet.";
+            : _runner is null or { AllDone: true } ? null
+            // Not "nothing has been changed" once a stage has run: it has, and
+            // the record on disk now says so, which is what makes closing the
+            // window here safe rather than lossy.
+            : _runner.Completed.Count > 0
+                ? "Finished stages are saved. You can close this and continue later."
+                : "Nothing has been changed yet.";
 
-    public bool CanAdvance => AllDone && !IsRunning && _awaitingReboot is null;
-
-    private bool AllDone => _stages.Count > 0 && _stages.All(s => _done.Contains(s.Id));
-
-    private Stage? NextStage => _stages.FirstOrDefault(s => !_done.Contains(s.Id));
+    public bool CanAdvance =>
+        _runner is { AllDone: true, IsRunning: false, AwaitingReboot: null };
 
     public event EventHandler? AdvanceAvailabilityChanged;
 
     public void OnEntering(SetupState state)
     {
         _state = state;
-        _stages = InstallPlan.BuildStages(state);
 
-        LogBox.Text = _log.ToString();
+        if (_runner is null)
+        {
+            _runner = new StageRunner(state, onLine: AppendLine);
+            if (_resumed is not null) _runner.AdoptResumedRun(_resumed);
+        }
+        else
+        {
+            // The user may have gone back and changed a component since the
+            // plan was built. Finished stages are tracked by id, so rebuilding
+            // does not re-offer them.
+            _runner.Rebuild();
+        }
+
+        LogBox.Text = _runner.Transcript;
         LogBox.ScrollToEnd();
 
-        EmptyNote.Visibility = _stages.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        EmptyNote.Visibility = _runner.Stages.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         Refresh();
     }
 
@@ -72,11 +80,14 @@ public partial class InstallPage : UserControl, IWizardPage
 
     private void Refresh()
     {
-        var next = NextStage;
+        if (_runner is null) return;
 
-        StageList.ItemsSource = _stages.Select(s =>
+        var done = _runner.Completed;
+        var next = _runner.Next;
+
+        StageList.ItemsSource = _runner.Stages.Select(s =>
         {
-            var finished = _done.Contains(s.Id);
+            var finished = done.Contains(s.Id);
             var isNext = !finished && s.Id == next?.Id;
 
             return new
@@ -100,7 +111,7 @@ public partial class InstallPage : UserControl, IWizardPage
             };
         }).ToList();
 
-        var waiting = _awaitingReboot is not null;
+        var waiting = _runner.AwaitingReboot is not null;
 
         RunButton.Visibility = waiting || next is null ? Visibility.Collapsed : Visibility.Visible;
         RunButton.IsEnabled = !IsRunning && next is not null;
@@ -111,112 +122,63 @@ public partial class InstallPage : UserControl, IWizardPage
 
         LogHeader.Text = IsRunning ? "Log — running"
             : waiting ? "Log — stage finished, restart pending"
-            : AllDone ? "Log — finished" : "Log";
+            : _runner.AllDone ? "Log — finished" : "Log";
 
         AdvanceAvailabilityChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    private void Log(string line)
+    /// <summary>
+    /// The runner's output sink. Called from the threadpool threads that read a
+    /// script's stdout and stderr, so every touch of the TextBox goes through
+    /// the dispatcher.
+    /// </summary>
+    private void AppendLine(string line) => Dispatcher.Invoke(() =>
     {
-        Dispatcher.Invoke(() =>
-        {
-            _log.AppendLine(line);
-            LogBox.AppendText(line + Environment.NewLine);
-            LogBox.ScrollToEnd();
-        });
-    }
+        LogBox.AppendText(line + Environment.NewLine);
+        LogBox.ScrollToEnd();
+    });
 
     private async void OnRunStage(object sender, RoutedEventArgs e)
     {
-        if (_state is null || IsRunning) return;
-        if (NextStage is not { } stage) return;
+        if (_state is null || _runner is null || _runner.IsRunning) return;
+        if (_runner.AwaitingReboot is not null) return;
+        if (_runner.Next is not { } stage) return;
 
-        var confirm = MessageBox.Show(
-            $"Stage: {stage.Title}\n\n"
-            + $"{stage.Steps.Count} step(s).\n\n"
-            + (stage.RebootAfter
-                ? "This stage needs a restart afterwards. LSA only reads its registrations at "
-                  + "boot, so nothing it installs is loaded until then.\n\nSnapshot taken?\n\n"
-                : "No restart needed for this stage.\n\n")
-            + "Continue?",
-            "Barista",
-            MessageBoxButton.YesNo,
-            stage.RebootAfter ? MessageBoxImage.Warning : MessageBoxImage.Question,
-            MessageBoxResult.No);
+        if (!ConfirmStage(stage)) return;
 
-        if (confirm != MessageBoxResult.Yes) return;
-
-        IsRunning = true;
+        // Started, then refreshed, then awaited. RunNextStageAsync sets
+        // IsRunning before its first await, so by the time the task is handed
+        // back the flag is already true and this refresh is the one that
+        // disables the button.
+        var running = _runner.RunNextStageAsync();
         Refresh();
 
-        Log($"=== {stage.Title}");
-        var failed = false;
-
-        for (var i = 0; i < stage.Steps.Count; i++)
+        StageOutcome outcome;
+        try
         {
-            var step = stage.Steps[i];
-            Log($"--- [{i + 1}/{stage.Steps.Count}] {step.Title}");
-
-            try
-            {
-                if (step.Kind == StepKind.Console)
-                {
-                    Log($"    Opening {Path.GetFileName(step.Command)} in its own window.");
-                    Log("    Finish in that window, then come back here.");
-                    var code = await ProcessRunner.RunInOwnConsoleAsync(step.Command, step.Arguments);
-                    Log(code == 0
-                        ? "    Done."
-                        : $"    Exited with code {code}. Nothing was stored if it reported a failure.");
-                    if (code != 0) failed = true;
-                }
-                else
-                {
-                    var result = await ProcessRunner.RunScriptAsync(step.Command, step.Arguments, Log);
-                    Log(result.Ok ? "    Done." : $"    FAILED (exit {result.ExitCode}).");
-                    if (!result.Ok) failed = true;
-                }
-            }
-            catch (Exception ex)
-            {
-                Log($"    FAILED: {ex.Message}");
-                failed = true;
-            }
-
-            if (failed)
-            {
-                // Stopping here matters more than usual: the steps are ordered
-                // so that nothing starts refusing logons before there is a way
-                // in. Carrying on past a failure is how that ordering breaks.
-                Log("");
-                Log("Stopped. A later step would have assumed this one worked.");
-                Log("Read the error above, fix it, and run the stage again - or restore the snapshot.");
-                break;
-            }
+            outcome = await running;
         }
-
-        IsRunning = false;
-
-        if (failed)
+        catch (Exception ex)
         {
-            Log("");
+            // The runner only throws when it was asked to do something it
+            // refuses to do - a stage while one is running, or past a pending
+            // reboot. The guards above mean that should not be reachable, so
+            // this is a bug report rather than a user-facing failure.
             Refresh();
-            MessageBox.Show(
-                "A step failed and the rest of this stage was skipped.\n\n"
-                + "Because stages run one at a time, only this stage's changes are in play. If "
-                + "it was registering an LSA component, prefer restoring the snapshot over "
-                + "rebooting.",
-                "Barista", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(ex.Message, "Barista", MessageBoxButton.OK, MessageBoxImage.Error);
             return;
         }
 
-        _done.Add(stage.Id);
-        Log($"=== {stage.Title}: done.");
-        Log("");
+        Refresh();
 
-        if (stage.RebootAfter)
+        if (!outcome.Ok)
         {
-            _awaitingReboot = stage;
-            Refresh();
+            ReportFailure(outcome);
+            return;
+        }
+
+        if (outcome.RebootPending)
+        {
             MessageBox.Show(
                 $"{stage.Title} is registered, but LSA has not read it yet - that happens at boot.\n\n"
                 + "Restart when you are ready. This tool saves where it got to and opens again "
@@ -224,34 +186,62 @@ public partial class InstallPage : UserControl, IWizardPage
                 + "runs anything else.",
                 "Restart needed", MessageBoxButton.OK, MessageBoxImage.Information);
         }
-        else
-        {
-            Refresh();
-        }
     }
 
-    private void SavePendingRun(bool armRunOnce)
+    /// <summary>
+    /// The confirmation before a stage runs.
+    ///
+    /// A stage carrying a PreRunPrompt has a precondition no registry read can
+    /// establish - "have you actually signed in with the tile yet?" - so that
+    /// question replaces the generic blurb rather than being appended under it,
+    /// where it would be read as boilerplate.
+    /// </summary>
+    private static bool ConfirmStage(Stage stage)
     {
-        if (_state is null) return;
+        var body = stage.PreRunPrompt is { Length: > 0 }
+            ? $"Stage: {stage.Title}\n\n{stage.PreRunPrompt}\n\n"
+              + (stage.RebootAfter ? "A restart follows, and it is the test.\n\nSnapshot taken?\n\n" : "")
+            : $"Stage: {stage.Title}\n\n"
+              + $"{stage.Steps.Count} step(s).\n\n"
+              + (stage.RebootAfter
+                  ? "This stage needs a restart afterwards. LSA only reads its registrations at "
+                    + "boot, so nothing it installs is loaded until then.\n\nSnapshot taken?\n\n"
+                  : "No restart needed for this stage.\n\n");
 
-        var persisted = _resumed ?? PersistedState.From(_state);
-        persisted.DoppioDir = _state.DoppioDir;
-        persisted.RistrettoDir = _state.RistrettoDir;
-        persisted.InstallCredentialProvider = _state.InstallCredentialProvider;
-        persisted.InstallAuthPackage = _state.InstallAuthPackage;
-        persisted.DenyKeepNetwork = _state.DenyKeepNetwork;
-        persisted.Network = _state.Network;
-        persisted.AccountsToEnroll = [.. _state.AccountsToEnroll];
-        persisted.AccountsToDeny = [.. _state.AccountsToDeny];
-        persisted.CompletedStages = [.. _done];
-        persisted.AwaitingVerificationOf = _awaitingReboot?.Id;
-        persisted.Log = _log.ToString();
+        return MessageBox.Show(
+            body + "Continue?",
+            "Barista",
+            MessageBoxButton.YesNo,
+            stage.RebootAfter ? MessageBoxImage.Warning : MessageBoxImage.Question,
+            MessageBoxResult.No) == MessageBoxResult.Yes;
+    }
 
-        StateStore.Save(persisted, armRunOnce);
+    private static void ReportFailure(StageOutcome outcome)
+    {
+        // Stages are the unit of retry, so re-running one re-runs its earlier
+        // steps too. That is harmless for a script that checks before it
+        // writes, and not harmless for enrollment: enroll.exe offers to replace
+        // an existing secret, and accepting that issues a new one and silently
+        // invalidates the authenticator entry.
+        var retryNote = outcome.Stage.Id == StageId.Enrollment
+            ? "\n\nRunning this stage again will go through every account in it, including "
+              + "any that already succeeded. enroll.exe will ask before replacing an "
+              + "existing secret - answer no for those, or the code in the app stops working."
+            : "";
+
+        MessageBox.Show(
+            "A step failed and the rest of this stage was skipped.\n\n"
+            + "Because stages run one at a time, only this stage's changes are in play. If "
+            + "it was registering an LSA component, prefer restoring the snapshot over "
+            + "rebooting."
+            + retryNote,
+            "Barista", MessageBoxButton.OK, MessageBoxImage.Error);
     }
 
     private void OnReboot(object sender, RoutedEventArgs e)
     {
+        if (_runner is null) return;
+
         var confirm = MessageBox.Show(
             "This restarts the machine now.\n\n"
             + "If it does not come back, restore the snapshot. Exactly one thing changed since "
@@ -260,16 +250,18 @@ public partial class InstallPage : UserControl, IWizardPage
 
         if (confirm != MessageBoxResult.Yes) return;
 
-        SavePendingRun(armRunOnce: true);
+        _runner.Save(armRunOnce: true);
         StateStore.Reboot();
         Application.Current.Shutdown();
     }
 
     private void OnRebootLater(object sender, RoutedEventArgs e)
     {
-        SavePendingRun(armRunOnce: true);
+        if (_runner is null) return;
+
+        _runner.Save(armRunOnce: true);
         MessageBox.Show(
-            $"Saved. Restart when you are ready.\n\n"
+            "Saved. Restart when you are ready.\n\n"
             + "This tool opens again after the next logon to continue. If it does not - the exe "
             + "moved, or the RunOnce entry was cleared - just start it by hand and it will find "
             + "the pending run.\n\n"

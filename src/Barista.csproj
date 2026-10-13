@@ -24,6 +24,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Everything that decides what happens to the machine lives here: the
+         preflight checks, the stage plan, the stage runner, the pending-run
+         record. Split out so it can be tested without a desktop - see
+         core/Barista.Core.csproj. -->
+    <ProjectReference Include="..\core\Barista.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Local QR rendering only. The point of this dependency is that nobody
          has to paste a TOTP secret into an online QR generator. MIT licensed,
          pure managed, no native bits. -->

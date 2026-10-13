@@ -20,6 +20,11 @@ Part 2 (inside LSA), Part 3 (the gate).
 
 ## Use it
 
+This is the *building* machine. If you only want to install Doppio and
+Ristretto somewhere — or hand them to somebody — skip to
+[Handing it to someone else](#handing-it-to-someone-else): that needs no
+compiler at all.
+
 ```bat
 git clone https://github.com/Nobrac/Barista
 cd Barista
@@ -27,11 +32,96 @@ bootstrap.bat
 ```
 
 That is the whole thing. It elevates itself, installs git, the .NET 10 SDK and
-the MSVC build tools through winget if they are missing, clones Doppio and
-Ristretto beside itself, builds all three, and opens the wizard.
+the MSVC build tools through winget if they are missing, **fetches Doppio and
+Ristretto from GitHub** beside itself, builds all three, and opens the wizard.
+Nothing has to be downloaded by hand first.
 
-Flags: `/nodeps` installs nothing through winget, `/noclone` uses whatever
-folders are already there.
+| Flag | |
+|---|---|
+| `/nodeps` | install nothing through winget |
+| `/noclone` | fetch nothing; use whatever folders are already there |
+| `/update` | bring existing clones up to date (`git pull --ff-only`) before building |
+| `/doppio-ref=<ref>` | pin Doppio to a tag or branch |
+| `/ristretto-ref=<ref>` | pin Ristretto to a tag or branch |
+
+### How the sources are fetched
+
+`tools/fetch-from-github.ps1` is what actually goes and gets them, and it walks
+down a ladder per repository rather than assuming `git clone` will work:
+
+1. **`git clone --recurse-submodules`** — preferred, because it is the only rung
+   that brings history and the Doppio submodule Ristretto links in.
+2. **the latest release's source zip** — if the repository publishes releases.
+3. **the default branch as a zip** from codeload — needs no git at all, which
+   matters with `/nodeps` on a machine that never got git, and on a network
+   that passes HTTPS GETs but not git's handshake.
+
+Each rung says whether it worked, so a failure names what was tried instead of
+just "could not get Doppio". Downloads draw a progress bar with percentage,
+size and transfer rate — a source zip is tens of megabytes and a bare
+"Downloading..." for forty seconds is indistinguishable from a hang. When the
+output is redirected to a log the bar collapses to one final line instead of a
+few thousand carriage returns.
+
+A repository that is private, unpublished or renamed answers 404 to all three
+rungs, anonymously, exactly as a missing one does. For **Ristretto** that is a
+normal outcome and the bootstrap carries on with Doppio alone; for Doppio it is
+fatal. A folder that is already there and not empty is never deleted or
+overwritten — it may be your own checkout — it is reported and left alone.
+
+Submodules are the one thing a zip cannot carry: GitHub source archives never
+include them. So when Ristretto arrived as a zip, the Doppio sources it links
+into `extern/doppio/` are copied out of the Doppio folder next door, which also
+guarantees both halves are built from the same Doppio.
+
+`install-doppio.ps1` is fetched on its own if the Doppio checkout predates it —
+the wizard's preflight blocks without it. It is looked for in `Doppio/` first
+(version control wins), then beside the bootstrap, then on Doppio's default
+branch. One file, not a re-clone: by that point Doppio may already be built,
+and throwing that away for a 4 KB script means another MSVC run.
+
+## Handing it to someone else
+
+Everything above is the *workshop*: the machine that compiles. Nobody else
+needs one. `tools\package-release.ps1` takes a working copy that has been
+through `bootstrap.bat` once and writes out what the install actually needs:
+
+```bat
+powershell -ExecutionPolicy Bypass -File tools\package-release.ps1
+```
+
+```
+dist\Barista-0.1.0\
+    Barista.exe          self-contained; no .NET on the target either
+    READ-ME-FIRST.txt
+    Doppio\              the built DLLs, the .reg files, the install scripts
+    Ristretto\           the same, when it is included
+dist\Barista-0.1.0.zip
+```
+
+That folder is the whole thing. The machine it goes to needs **no git, no .NET
+SDK and no C++ compiler** — only administrator rights. The wizard finds the two
+folders beside itself, and every file it checks for is already there, so it
+never offers to build anything.
+
+Three things the packer does on purpose:
+
+- **It refuses to pack an incomplete build**, and names the missing files. The
+  alternative is a bundle that fails its own preflight in front of somebody
+  else, which is the worst possible place to discover a missing DLL.
+- **It ships no `build.bat`.** A build script on a machine with no compiler is
+  a button whose only outcome is "install several gigabytes of Visual Studio
+  first".
+- **Its file list is tested** against `Preflight`'s, in both directions. A file
+  the wizard checks for and the packer forgets is not a build error and not a
+  test failure anywhere else — it is a red line on a stranger's screen.
+
+Two things it cannot do for you. The exe is **unsigned**, so SmartScreen will
+warn on a machine that has never seen it; that is honest, and the person
+running it should know what they are running. And the warning at the top of
+this file travels with the bundle: this installs an unsigned DLL into
+`lsass.exe`, so it belongs on a test VM with a snapshot, not on a laptop
+somebody needs on Monday. `READ-ME-FIRST.txt` says so in those words.
 
 ## What it does not do
 
@@ -58,10 +148,11 @@ Part 2 says it plainly:
 So the install is cut into stages rather than run as one batch:
 
 ```
-1. credential provider    → restart → "does the tile work?"
+1. credential provider    → restart → "does the tile appear, next to the usual ones?"
 2. enrollment + reindex      (no restart)
-3. network policy         → restart → "did it come back? is the filter called?"
-4. authentication package → restart → "did it come back?"
+3. provider filter        → restart → "can you still get in, with only the tile?"
+4. network policy         → restart → "did it come back? is the filter called?"
+5. authentication package → restart → "did it come back?"
 ```
 
 After each restart Barista opens again by itself and asks whether the machine
@@ -69,9 +160,24 @@ is healthy **before** running anything else. Answer no and it stops, tells you
 what the last stage changed, and offers the matching uninstall script. At any
 failure there is exactly one suspect.
 
-Enrollment deliberately sits between the tile and any filter: the accounts a
-filter will judge need a secret first, and `enroll /reindex` has to run before
-the filter reads the RID index.
+Three things about that order.
+
+Enrollment sits between the tile and any filter: the accounts a filter will
+judge need a secret first, and `enroll /reindex` has to run before the filter
+reads the RID index.
+
+`install-doppio.ps1` is **two** script runs, not one, and stage 3 is the second
+of them. Without `-EnableFilter` the tile is only ever offered *alongside* the
+password tile — Part 1 puts it plainly: "without the filter you could choose
+the normal password tile and skip the code." So stage 1 installs the tile and
+stage 3 makes it the only option, with enrollment and a real sign-in test in
+between. Stage 3 is also the only stage with a question *before* it runs:
+whether you have actually signed in through the tile yet. No registry read can
+answer that, and it is the last moment the password tile is there to catch you.
+
+Stage 3 comes **before** the network stages, not after. If the tile turns out
+to be broken, a network logon is still a way in; the other order means one bad
+tile leaves no path at all.
 
 ### Surviving the reboot
 
@@ -79,7 +185,13 @@ Two independent mechanisms:
 
 - `%ProgramData%\TheAdminCafe\Barista\pending-run.json` — the actual record.
   Paths, account names, which stages are done, the log so far. **No secrets**;
-  those stay DPAPI-encrypted in Doppio's own store.
+  those stay DPAPI-encrypted in Doppio's own store. Written after **every**
+  finished stage, not only before a reboot: a stage with no reboot of its own
+  (enrollment, the deny rights) was otherwise finished in memory and nowhere
+  else, so closing the window after it lost the fact that it had run — and the
+  next start then re-ran `enroll.exe` for an account that already had a secret.
+  Only a pending reboot arms `RunOnce`, so nothing opens by itself unless
+  something is actually waiting.
 - `HKLM\...\CurrentVersion\RunOnce` — convenience, so the window opens after
   the next logon. It deletes its own value as it fires, so nothing lingers if
   you never continue.
@@ -87,6 +199,22 @@ Two independent mechanisms:
 The registry entry is not load-bearing. If it never fires, starting Barista by
 hand finds the record and offers to continue. A resume that depends on one
 registry value is a resume that silently does not happen.
+
+## Enrolled and denied are two columns
+
+The accounts page asks twice per account, because they are different questions:
+give it a second factor, and close its non-interactive paths.
+
+They have to be separable. The filter in stage 3 refuses to register while any
+enabled local account has no secret — an account without one could not sign in
+at all once the tile is the only option — so the break-glass admin *must* be
+enrolled. And `deny-noninteractive.ps1` says in its own header to "keep a
+second admin account that still works". Both at once only works if enrolling an
+account does not also deny it: enrolled, so the tile accepts it; not denied, so
+SMB, WinRM or RDP still get you in when the tile does not.
+
+Denying is opt-in per account, and the page says so when a selection leaves
+nothing that can reach the machine without the tile.
 
 ## It does not reimplement the install
 
@@ -102,13 +230,20 @@ Reimplementing that in C# would mean two copies of security-sensitive code
 drifting apart, which is exactly the failure mode Ristretto's
 `SECURITY-FIXES.md` flags for its duplicated registry reads.
 
-Three things Barista does to the machine itself:
+Four things Barista does to the machine itself:
 
 | Action | Why it is not in a script |
 |---|---|
-| Write `RunAsPPL` | Not an install step. Its own dialog, and only offered when a component that loads into lsass was actually chosen. |
+| Write `RunAsPPL` (and `RunAsPPLBoot`) | Not an install step. Its own dialog, and only offered when a component that loads into lsass was actually chosen. Both values, because every install script gates on both — clearing one and leaving the other means giving up the protection and staying blocked anyway. |
 | Launch `enroll.exe` | In its own console window, because the `y/N` prompts use `_getwch()`, which reads the console directly and ignores redirected stdin. |
 | Write the pending-run record and `RunOnce` | So a staged install survives its reboots. |
+| `reg import unregister.reg` | The only way back out of the credential provider is one of Doppio's own `.reg` files, and `powershell -File` cannot run a `.reg`. The keys and their deletion order still live in that file, not here. |
+
+The recovery path is built from what is **registered**, not from what was
+chosen: the Auth0 value, the LSA package list, and the provider and filter
+CLSIDs are all read before anything is offered. Those stop agreeing with the
+plan the moment a stage fails, which is exactly when the recovery button gets
+pressed.
 
 ## Building just the wizard
 
@@ -120,7 +255,8 @@ dotnet publish -c Release -r win-x64 --self-contained true ^
 ```
 
 Needs the **.NET 10 SDK** — not the same toolchain as Doppio and Ristretto,
-which need MSVC. Visual Studio with the C++ workload does not include it.
+which need MSVC. The wizard project pulls in `core/Barista.Core.csproj`, so
+publishing `src/` builds both. Visual Studio with the C++ workload does not include it.
 
 One NuGet dependency: **QRCoder** (MIT, pure managed). It renders the
 `otpauth://` URI as a QR code in-process, so nobody has to paste a TOTP secret
@@ -135,11 +271,37 @@ look like a failed one.
 
 ```
 bootstrap.bat          fetch, build, launch
-src/                   the WPF wizard
-  Services/            preflight checks, the stage plan, the pending-run record
+tools/
+  fetch-from-github.ps1  clone -> release -> branch zip, with a progress bar
+  package-release.ps1    a built workshop -> one folder to hand to somebody
+core/                  everything that decides what happens to the machine
+  Preflight.cs           the checks the install scripts would otherwise fail on
+  InstallPlan.cs         the stage plan and the recovery plan
+  StageRunner.cs         runs one stage, stops at the first failure, saves
+  StateStore.cs          the pending-run record and the RunOnce entry
+  ProcessRunner.cs       runs the repo's own scripts
+  BuildRunner.cs         builds Doppio and Ristretto through vcvars64
+src/                   the WPF wizard - windows, pages, dialogs
   Views/               one file per wizard page
-Doppio/                cloned by bootstrap, gitignored
-Ristretto/             cloned by bootstrap, gitignored
+tests/                 what the stage plan and the runner are held to
+Doppio/                fetched by bootstrap, gitignored
+Ristretto/             fetched by bootstrap, gitignored
+```
+
+The split is not cosmetic. `core/` has no WPF in it, so the stage plan and the
+stage runner - the parts where a mistake locks someone out of a machine - can be
+tested without a desktop. They used to live in the install page's code-behind,
+wrapped around `MessageBox` calls, which meant the rules they enforce (the
+plan's order, stop at the first failed step, every finished stage written to
+disk, `RunOnce` armed only when a reboot is actually pending) were asserted by
+comments and by whoever last read them. `tests/` asserts them now, and CI runs
+it on every push.
+
+The dialogs stayed in `src/`: a confirmation is the one part that genuinely
+needs a person looking at a screen.
+
+```bat
+dotnet test tests\Barista.Core.Tests\Barista.Core.Tests.csproj
 ```
 
 ## Still open

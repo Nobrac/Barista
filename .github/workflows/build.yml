@@ -11,11 +11,42 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      # The two tools are PowerShell, so nothing in the C# build would ever
+      # notice a syntax error in them. The first person to find out would be
+      # someone running bootstrap.bat on a fresh VM at the point where it goes
+      # to get Doppio, or someone packing a bundle for a friend. Parsing them
+      # here is cheap.
+      - name: Check the PowerShell tools parse
+        shell: pwsh
+        run: |
+          $bad = $false
+          foreach ($file in Get-ChildItem tools/*.ps1) {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $file.FullName, [ref] $null, [ref] $errors) | Out-Null
+            if ($errors) {
+              $bad = $true
+              $errors | ForEach-Object {
+                Write-Host "::error file=$($file.Name),line=$($_.Extent.StartLineNumber)::$($_.Message)"
+              }
+            } else {
+              Write-Host "$($file.Name) parses clean"
+            }
+          }
+          if ($bad) { exit 1 }
+
       # Only the wizard is built here. Doppio and Ristretto need MSVC and are
       # built by their own repositories; bootstrap.bat is what joins the three
       # on a real machine, and there is nothing useful to assert about it in CI.
       - name: Build
         run: dotnet build src/Barista.csproj -c Release
+
+      # The stage plan and the stage runner are where a mistake locks someone
+      # out of a VM, so they are a library with tests rather than a WPF
+      # code-behind. This is the step that makes the ordering rules in
+      # InstallPlan's comments fail a build instead of being re-read.
+      - name: Test
+        run: dotnet test tests/Barista.Core.Tests/Barista.Core.Tests.csproj -c Release --nologo
 
       - name: Publish
         run: >

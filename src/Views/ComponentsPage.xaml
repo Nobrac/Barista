@@ -13,10 +13,23 @@
                   Margin="0,0,0,4">
           <TextBlock FontWeight="SemiBold" Text="The credential provider (the logon tile)"/>
         </CheckBox>
-        <TextBlock Margin="22,0,0,0" Foreground="{StaticResource Muted}" MaxWidth="620">
-          Adds a tile that asks for a password and a one-time code, and hides the other sign-in
-          options. Runs in LogonUI, not lsass — a bug here costs you a tile, and Safe Mode still
-          gets you in. This is the low-risk half of the project.
+        <TextBlock Margin="22,0,0,12" Foreground="{StaticResource Muted}" MaxWidth="620">
+          Adds a tile that asks for a password and a one-time code. On its own it is offered
+          next to the usual tiles, not instead of them. Runs in LogonUI, not lsass — a bug here
+          costs you a tile, and Safe Mode still gets you in. This is the low-risk half of the
+          project.
+        </TextBlock>
+
+        <CheckBox x:Name="ChkProviderFilter" IsChecked="True" Checked="OnChanged"
+                  Unchecked="OnChanged" Margin="22,0,0,4">
+          <TextBlock FontWeight="SemiBold" Text="…and make it the only way in"/>
+        </CheckBox>
+        <TextBlock Margin="44,0,0,0" Foreground="{StaticResource Muted}" MaxWidth="600">
+          Registers the provider filter, which hides the password, PIN and Hello tiles. Without
+          this the second factor is optional in practice — anyone at the logon screen can pick
+          the password tile and skip the code — so it is on by default. It is a separate stage
+          with its own restart, run after enrollment and before the network changes, because a
+          tile that does not work and no other tile is a console nobody can log in to.
         </TextBlock>
       </StackPanel>
     </Border>

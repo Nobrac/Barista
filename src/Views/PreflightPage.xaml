@@ -4,12 +4,16 @@
   <StackPanel>
     <Grid Margin="0,0,0,6">
       <TextBlock Style="{StaticResource H1}" Text="What this machine looks like"/>
-      <Button Content="Re-check" HorizontalAlignment="Right" VerticalAlignment="Top"
-              Click="OnRecheck"/>
+      <Button x:Name="RecheckButton" Content="Re-check" HorizontalAlignment="Right"
+              VerticalAlignment="Top" Click="OnRecheck"/>
     </Grid>
     <TextBlock Style="{StaticResource Lede}">
       Read-only. Nothing below has been changed.
     </TextBlock>
+
+    <TextBlock x:Name="BusyNote" Visibility="Collapsed" Margin="0,0,0,12"
+               Foreground="{StaticResource Muted}"
+               Text="Checking… reading the event log and the account list takes a moment."/>
 
     <ItemsControl x:Name="CheckList">
       <ItemsControl.ItemTemplate>

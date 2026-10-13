@@ -4,9 +4,9 @@
   <StackPanel>
     <TextBlock Style="{StaticResource H1}" Text="Where are the binaries?"/>
     <TextBlock Style="{StaticResource Lede}">
-      Point this at the folders you cloned. If the binaries are not built yet, it can build them
-      here — it finds the MSVC environment itself, so there is no need for the x64 Native Tools
-      Command Prompt.
+      Usually already filled in: the folders sit next to this program. If the binaries still have
+      to be built, it can do that here — it finds the MSVC environment itself, so there is no need
+      for the x64 Native Tools Command Prompt.
     </TextBlock>
 
     <Border x:Name="ToolchainCard" Style="{StaticResource CardBorder}">
@@ -21,7 +21,8 @@
         <TextBlock FontWeight="SemiBold" Text="Doppio"/>
         <TextBlock Margin="0,4,0,10" Foreground="{StaticResource Muted}">
           The folder holding TacProvider.dll, enroll.exe, the .reg files and the install-*.ps1
-          scripts — the repository root after build.bat has run.
+          scripts — the Doppio folder of a packaged copy, or the repository root after build.bat
+          has run.
         </TextBlock>
         <Grid>
           <Grid.ColumnDefinitions>

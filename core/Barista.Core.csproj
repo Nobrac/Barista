@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Everything that decides what happens to the machine, with no WPF in it.
+
+       It is a separate assembly for one reason: the stage plan and the stage
+       runner are the parts where a mistake locks someone out of a test VM, and
+       they were previously reachable only through a UserControl. A test project
+       cannot instantiate one of those without a desktop, so the invariants in
+       the comments - the filter runs after enrollment and before the network
+       stages, a failed step stops the stage, every finished stage is written
+       down - were asserted by prose and nothing else.
+
+       net10.0-windows, not net10.0: Preflight reads the registry and shells out
+       to PowerShell, so this was never going to be portable. It just does not
+       need a window. -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+
+    <!-- Same reason as the app: the DLLs this installs are x64, and an x86
+         process would have its registry writes redirected into Wow6432Node. -->
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+
+    <AssemblyName>Barista.Core</AssemblyName>
+    <RootNamespace>Barista</RootNamespace>
+    <Version>0.1.0</Version>
+    <Company>The Admin Cafe</Company>
+    <Product>Barista</Product>
+  </PropertyGroup>
+
+</Project>
