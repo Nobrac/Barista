@@ -64,7 +64,12 @@ param(
     # self-built copy ends up with exactly the same sources. Overrides -Ref,
     # releases and branches; -Update then means "move to the pin".
     [string] $LockFile,
-    [string] $LockKey
+    [string] $LockKey,
+
+    # Where source archives come from. Only ever changed to point at a mirror,
+    # or at a local test server standing in for GitHub - the pinned zip path
+    # is otherwise untestable on a machine that has git.
+    [string] $ArchiveBase = 'https://codeload.github.com'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -335,7 +340,7 @@ if ($LockFile -and $LockKey) {
         $zip = $null
         try {
             Write-Step "downloading $Repo_ at $($Sha.Substring(0, 7)) as a zip..."
-            $zip = Get-ToTempFile "https://codeload.github.com/$Owner_/$Repo_/zip/$Sha" '.zip'
+            $zip = Get-ToTempFile "$ArchiveBase/$Owner_/$Repo_/zip/$Sha" '.zip'
             Expand-ZipIntoDest $zip $Into
             Set-Content -LiteralPath (Join-Path $Into $pinFile) -Value $Sha -Encoding Ascii
             return $true
@@ -538,7 +543,7 @@ foreach ($branch in ($branches | Select-Object -Unique)) {
     Write-Step "downloading $Repo ($branch) as a zip..."
     $zip = $null
     try {
-        $zip = Get-ToTempFile "https://codeload.github.com/$Owner/$Repo/zip/refs/heads/$branch" '.zip'
+        $zip = Get-ToTempFile "$ArchiveBase/$Owner/$Repo/zip/refs/heads/$branch" '.zip'
         Expand-ZipIntoDest $zip $Dest
         if (Test-Marker) {
             Write-Step "unpacked $Repo ($branch)"
