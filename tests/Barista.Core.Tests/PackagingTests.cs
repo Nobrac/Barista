@@ -17,20 +17,29 @@ namespace Barista.Core.Tests;
 /// </summary>
 public class PackagingTests
 {
-    private static string Script()
+    private const string Packer = "package-release.ps1";
+
+    /// <summary>
+    /// What CI embeds into a standalone release. Same lists, same rule: a file
+    /// it leaves out is a red row on the integrity page of somebody else's
+    /// machine, with no compiler there to make it.
+    /// </summary>
+    private const string PayloadBuilder = "build-payload.ps1";
+
+    private static string Script(string name = Packer)
     {
-        var path = Path.Combine(AppContext.BaseDirectory, "package-release.ps1");
+        var path = Path.Combine(AppContext.BaseDirectory, name);
         Assert.True(File.Exists(path),
-            $"package-release.ps1 was not copied next to the tests ({path}). "
-            + "See the None item in Barista.Core.Tests.csproj.");
+            $"{name} was not copied next to the tests ({path}). "
+            + "See the None items in Barista.Core.Tests.csproj.");
         return File.ReadAllText(path);
     }
 
     /// <summary>The files one `$Name = @( ... )` list in the script packs.</summary>
-    private static HashSet<string> Packed(string variable)
+    private static HashSet<string> Packed(string variable, string script = Packer)
     {
-        var block = Regex.Match(Script(), $@"\${variable}\s*=\s*@\((.*?)\n\)", RegexOptions.Singleline);
-        Assert.True(block.Success, $"${variable} is not an @( ... ) list in package-release.ps1.");
+        var block = Regex.Match(Script(script), $@"\${variable}\s*=\s*@\((.*?)\n\)", RegexOptions.Singleline);
+        Assert.True(block.Success, $"${variable} is not an @( ... ) list in {script}.");
 
         return new HashSet<string>(
             Regex.Matches(block.Groups[1].Value, "'([^']+)'").Select(m => m.Groups[1].Value),
@@ -54,13 +63,13 @@ public class PackagingTests
         Preflight.RistrettoFiles,
         Preflight.RistrettoRecoveryFiles);
 
-    private static void AssertCovers(string variable, HashSet<string> needed)
+    private static void AssertCovers(string variable, HashSet<string> needed, string script = Packer)
     {
-        var packed = Packed(variable);
+        var packed = Packed(variable, script);
 
         var missing = needed.Except(packed, StringComparer.OrdinalIgnoreCase).ToArray();
         Assert.True(missing.Length == 0,
-            $"package-release.ps1 ${variable} does not pack: {string.Join(", ", missing)}. "
+            $"{script} ${variable} does not pack: {string.Join(", ", missing)}. "
             + "The wizard's preflight blocks on those, on a machine that cannot build them.");
 
         // Not tidiness. A file in the bundle that no list names is still a file
@@ -68,7 +77,7 @@ public class PackagingTests
         // stops shipping it turns into "not fully built" for a good checkout.
         var extra = packed.Except(needed, StringComparer.OrdinalIgnoreCase).ToArray();
         Assert.True(extra.Length == 0,
-            $"package-release.ps1 ${variable} packs files no Preflight list names: "
+            $"{script} ${variable} packs files no Preflight list names: "
             + string.Join(", ", extra));
     }
 
@@ -79,6 +88,22 @@ public class PackagingTests
     [Fact]
     public void The_bundle_carries_exactly_what_the_wizard_checks_for_in_Ristretto()
         => AssertCovers("RistrettoFiles", RistrettoNeeded());
+
+    [Fact]
+    public void The_standalone_payload_carries_exactly_what_the_wizard_checks_for_in_Doppio()
+        => AssertCovers("DoppioFiles", DoppioNeeded(), PayloadBuilder);
+
+    [Fact]
+    public void The_standalone_payload_carries_exactly_what_the_wizard_checks_for_in_Ristretto()
+        => AssertCovers("RistrettoFiles", RistrettoNeeded(), PayloadBuilder);
+
+    [Fact]
+    public void The_standalone_payload_ships_no_build_script()
+    {
+        var packed = Packed("DoppioFiles", PayloadBuilder).Concat(Packed("RistrettoFiles", PayloadBuilder));
+        Assert.DoesNotContain("build.bat", packed, StringComparer.OrdinalIgnoreCase);
+        Assert.DoesNotContain("build-ristretto.bat", packed, StringComparer.OrdinalIgnoreCase);
+    }
 
     [Fact]
     public void The_bundle_ships_no_build_script()

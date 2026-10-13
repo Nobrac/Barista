@@ -18,6 +18,36 @@ Part 2 (inside LSA), Part 3 (the gate).
 > will not boot. Snapshot before every reboot. Barista asks you to confirm
 > that, and will not start until you do.
 
+## Download and run (standalone)
+
+The release page has one file, `Barista.exe`, that brings everything along.
+The machine you run it on needs **no git, no .NET, no C++ compiler and no
+network** - only administrator rights.
+
+1. Download `Barista.exe` and `SHA256SUMS` from the release page.
+2. Compare: `certutil -hashfile Barista.exe SHA256` must print the value
+   `SHA256SUMS` lists for `Barista.exe`.
+3. Snapshot the VM, then right-click `Barista.exe` → *Run as administrator*.
+
+Doppio and Ristretto are compiled by CI from the commits pinned in
+[`payload.lock.json`](payload.lock.json) and embedded into the exe, with the
+SHA-256 of every file. The second page of the wizard, **Integrity**, unpacks
+them into `%ProgramFiles%\TheAdminCafe\Barista\payload\<id>` (writable only
+by administrators), reads every file back and shows expected against actual
+hash for each one. Continue stays off unless all of them match. The same
+check runs again after every reboot and right before every stage.
+
+How a release is made: push a tag `v*`. [`release.yml`](.github/workflows/release.yml)
+checks out both repositories at their pins, runs
+[`tools/build-payload.ps1`](tools/build-payload.ps1), publishes with
+`-p:RequirePayload=true` and attaches `Barista.exe`, `SHA256SUMS` and
+`payload-manifest.json` to a **draft** release for a person to publish.
+To move to newer Doppio or Ristretto commits, change the pins in
+`payload.lock.json` - nothing else.
+
+The rest of this page is about the *building* machine: a developer build
+without an embedded payload, which asks for folders and can build them.
+
 ## Use it
 
 This is the *building* machine. If you only want to install Doppio and

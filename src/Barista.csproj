@@ -17,7 +17,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>Barista</AssemblyName>
     <RootNamespace>Barista</RootNamespace>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <Company>The Admin Cafe</Company>
     <Product>Barista</Product>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
@@ -37,5 +37,28 @@
          pure managed, no native bits. -->
     <PackageReference Include="QRCoder" Version="1.6.0" />
   </ItemGroup>
+
+  <!-- The built-in payload: Doppio and Ristretto, compiled by CI from the
+       commits pinned in payload.lock.json, plus a manifest with the SHA-256 of
+       every file. tools\build-payload.ps1 writes both into payload\out.
+
+       Embedded only when present, so a plain "dotnet build" on a developer
+       machine still works - that build simply has no payload and the wizard
+       asks for folders instead. A release must not quietly become that build,
+       hence RequirePayload, which the release workflow sets. -->
+  <PropertyGroup>
+    <PayloadDir>$(MSBuildThisFileDirectory)..\payload\out\</PayloadDir>
+  </PropertyGroup>
+
+  <ItemGroup Condition="Exists('$(PayloadDir)payload.zip') And Exists('$(PayloadDir)payload-manifest.json')">
+    <EmbeddedResource Include="$(PayloadDir)payload.zip" LogicalName="Barista.Payload.zip" />
+    <EmbeddedResource Include="$(PayloadDir)payload-manifest.json" LogicalName="Barista.Payload.json" />
+  </ItemGroup>
+
+  <Target Name="RequireEmbeddedPayload" BeforeTargets="BeforeBuild"
+          Condition="'$(RequirePayload)' == 'true'">
+    <Error Condition="!Exists('$(PayloadDir)payload.zip') Or !Exists('$(PayloadDir)payload-manifest.json')"
+           Text="RequirePayload is set but $(PayloadDir) has no payload.zip and payload-manifest.json. Run tools\build-payload.ps1 first." />
+  </Target>
 
 </Project>

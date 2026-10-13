@@ -25,3 +25,9 @@ Barista.exe
 packages/
 *.nuget.props
 *.nuget.targets
+
+# What tools\build-payload.ps1 writes: the compiled Doppio/Ristretto files and
+# their manifest, embedded into Barista.exe by a release build. Built by CI
+# from the pins in payload.lock.json, never committed.
+payload/out/
+payload/stage/

@@ -145,6 +145,7 @@ public partial class InstallPage : UserControl, IWizardPage
         if (_runner.Next is not { } stage) return;
 
         if (!ConfirmStage(stage)) return;
+        if (!PayloadStillIntact()) return;
 
         // Started, then refreshed, then awaited. RunNextStageAsync sets
         // IsRunning before its first await, so by the time the task is handed
@@ -196,6 +197,39 @@ public partial class InstallPage : UserControl, IWizardPage
     /// question replaces the generic blurb rather than being appended under it,
     /// where it would be read as boilerplate.
     /// </summary>
+    /// <summary>
+    /// Reads the built-in files back once more right before a stage runs them.
+    ///
+    /// The integrity page checked them already, but a confirmation dialog, an
+    /// enrollment and possibly a coffee lie between that and this. A few
+    /// hundred kilobytes of hashing is cheap next to running a changed script
+    /// elevated.
+    /// </summary>
+    private bool PayloadStillIntact()
+    {
+        if (App.Payload is not { } payload) return true;
+
+        var rows = PayloadVerifier.VerifyFolder(payload.Manifest, payload.Root);
+        var extra = PayloadVerifier.Unexpected(payload.Manifest, payload.Root);
+        var bad = rows.Where(r => !r.Ok).Select(r => $"{r.File.Path}: {r.Status}").Concat(extra).ToList();
+        if (bad.Count == 0)
+        {
+            AppendLine($"Built-in files re-checked: all {rows.Count} SHA-256 values match.");
+            return true;
+        }
+
+        AppendLine("Built-in files changed since the integrity check - stage not started:");
+        foreach (var line in bad) AppendLine("    " + line);
+
+        MessageBox.Show(
+            "The built-in files no longer match the release:\n\n"
+            + string.Join("\n", bad)
+            + "\n\nThe stage was not started. Go back to the Integrity page and press Check again "
+            + "to unpack them afresh.",
+            "Barista", MessageBoxButton.OK, MessageBoxImage.Error);
+        return false;
+    }
+
     private static bool ConfirmStage(Stage stage)
     {
         var body = stage.PreRunPrompt is { Length: > 0 }

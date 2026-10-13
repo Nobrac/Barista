@@ -35,13 +35,28 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
+        var payload = App.Payload;
+
         if (resume is not null)
         {
             _state = resume.ToSetupState();
 
+            // The folders in the pending-run file are not used when this exe
+            // carries its own payload. That file lives in ProgramData, and a
+            // path read back from it may have been written by somebody other
+            // than this tool. The built-in files are the only ones a release
+            // runs, and they are checked again on the page below before
+            // anything else happens after the reboot.
+            if (payload is not null)
+            {
+                _state.DoppioDir = payload.DoppioDir;
+                _state.RistrettoDir = _state.RistrettoDir is { Length: > 0 } ? payload.RistrettoDir : null;
+            }
+
             var install = new InstallPage();
             install.AdoptResumedRun(resume);
 
+            if (payload is not null) _pages.Add(new PayloadPage(payload, resuming: true));
             _pages.Add(new ResumePage(resume));
             _pages.Add(install);
             _pages.Add(new DonePage());
@@ -51,7 +66,9 @@ public partial class MainWindow : Window
             _state = new SetupState();
 
             _pages.Add(new RiskPage());
-            _pages.Add(new SourcePage());
+            // A release brings its own binaries and checks them; only a
+            // developer build without them asks where they are, or builds them.
+            _pages.Add(payload is not null ? new PayloadPage(payload) : new SourcePage());
             // Components before Preflight on purpose: several checks only
             // apply to some choices, and a check that blocks on something you
             // did not ask for teaches people to ignore checks.

@@ -1,0 +1,121 @@
+name: release
+
+# One self-contained Barista.exe that brings everything along. The machine it
+# is run on needs no git, no .NET, no C++ compiler and no network: Doppio and
+# Ristretto are compiled here, from the commits pinned in payload.lock.json,
+# and embedded into the exe together with the SHA-256 of every file.
+#
+# Runs on a version tag, and by hand for a test build. Either way the result
+# is a DRAFT release: a person looks at it and publishes it, nothing here does.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the pins and the version
+        id: pins
+        shell: pwsh
+        run: |
+          $lock = Get-Content payload.lock.json -Raw | ConvertFrom-Json
+          foreach ($p in @($lock.doppio.commit, $lock.ristretto.commit)) {
+            if ($p -notmatch '^[0-9a-f]{40}$') { throw "Pin '$p' is not a full commit id." }
+          }
+          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.0.0-dev' }
+          "doppio=$($lock.doppio.commit)"       >> $env:GITHUB_OUTPUT
+          "ristretto=$($lock.ristretto.commit)" >> $env:GITHUB_OUTPUT
+          "version=$version"                    >> $env:GITHUB_OUTPUT
+
+      # The two repositories at exactly their pins. persist-credentials off:
+      # nothing in this job pushes to them.
+      - uses: actions/checkout@v4
+        with:
+          repository: Nobrac/Doppio
+          ref: ${{ steps.pins.outputs.doppio }}
+          path: Doppio
+          persist-credentials: false
+
+      - uses: actions/checkout@v4
+        with:
+          repository: Nobrac/Ristretto
+          ref: ${{ steps.pins.outputs.ristretto }}
+          path: Ristretto
+          submodules: recursive
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # Compiles both with MSVC, checks the checkouts are at their pins, and
+      # writes payload\out\payload.zip plus payload-manifest.json.
+      - name: Build the payload
+        shell: pwsh
+        run: >
+          ./tools/build-payload.ps1
+          -DoppioDir Doppio -RistrettoDir Ristretto
+          -Version ${{ steps.pins.outputs.version }}
+
+      - name: Test
+        run: dotnet test tests/Barista.Core.Tests/Barista.Core.Tests.csproj -c Release --nologo
+
+      # RequirePayload turns a missing payload into a build error, so a
+      # release can never be the developer build that asks for folders.
+      - name: Publish the standalone exe
+        run: >
+          dotnet publish src/Barista.csproj -c Release -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          -p:RequirePayload=true
+          -p:Version=${{ steps.pins.outputs.version }}
+          -o release-out
+
+      # Code signing goes here, before the checksums, once a certificate is
+      # available to this repository: signtool sign /fd SHA256 /tr <timestamp
+      # server> /td SHA256 release-out\Barista.exe. Until then the integrity
+      # page reports the exe as unsigned and points at SHA256SUMS instead.
+
+      - name: Checksums
+        shell: pwsh
+        run: |
+          $out = 'release-out'
+          Copy-Item payload/out/payload-manifest.json $out/
+          $lines = foreach ($f in @('Barista.exe', 'payload-manifest.json')) {
+            '{0}  {1}' -f (Get-FileHash "$out/$f" -Algorithm SHA256).Hash.ToLowerInvariant(), $f
+          }
+          # The embedded files too, in the same form, so the integrity page's
+          # "Copy report" can be compared with this file line by line.
+          $manifest = Get-Content payload/out/payload-manifest.json -Raw | ConvertFrom-Json
+          $lines += foreach ($e in $manifest.files) { '{0}  {1}' -f $e.sha256, $e.path }
+          [IO.File]::WriteAllLines("$out/SHA256SUMS", $lines)
+          Get-Content "$out/SHA256SUMS"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: barista-standalone-${{ steps.pins.outputs.version }}
+          path: |
+            release-out/Barista.exe
+            release-out/SHA256SUMS
+            release-out/payload-manifest.json
+
+      - name: Draft the release
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create $env:GITHUB_REF_NAME --draft --verify-tag
+          --title "Barista ${{ steps.pins.outputs.version }}"
+          --notes "Standalone: no git, no .NET, no compiler needed. Doppio ${{ steps.pins.outputs.doppio }}, Ristretto ${{ steps.pins.outputs.ristretto }}. Compare Barista.exe with SHA256SUMS before running it."
+          release-out/Barista.exe release-out/SHA256SUMS release-out/payload-manifest.json

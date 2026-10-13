@@ -16,6 +16,7 @@
     <SolidColorBrush x:Key="Danger"  Color="#9B2C2C"/>
     <SolidColorBrush x:Key="DangerBg" Color="#FBEDEC"/>
     <SolidColorBrush x:Key="WarnBg"  Color="#FBF4E7"/>
+    <SolidColorBrush x:Key="GoodBg"  Color="#EAF3EE"/>
 
     <Style TargetType="TextBlock">
       <Setter Property="FontFamily" Value="Segoe UI"/>

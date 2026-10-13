@@ -39,8 +39,18 @@ public partial class App : Application
         }
     }
 
+    /// <summary>
+    /// The binaries built into this exe, or null for a developer build that
+    /// has none. Loaded once, before any window, so a release whose embedded
+    /// manifest is damaged stops here instead of turning into a build that
+    /// asks for folders.
+    /// </summary>
+    public static EmbeddedPayload? Payload { get; private set; }
+
     private void Start(StartupEventArgs e)
     {
+        Payload = EmbeddedPayload.TryLoad(typeof(App).Assembly);
+
         var launchedByRunOnce = e.Args.Any(a =>
             a.Equals("/resume", StringComparison.OrdinalIgnoreCase));
 

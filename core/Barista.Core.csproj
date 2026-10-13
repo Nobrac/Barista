@@ -27,7 +27,7 @@
 
     <AssemblyName>Barista.Core</AssemblyName>
     <RootNamespace>Barista</RootNamespace>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <Company>The Admin Cafe</Company>
     <Product>Barista</Product>
   </PropertyGroup>
