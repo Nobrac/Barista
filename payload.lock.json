@@ -1,11 +1,11 @@
 {
   "doppio": {
     "repository": "https://github.com/Nobrac/Doppio",
-    "commit": "dec5fd2897416b85cd77a9de7aded18fa9ade56c"
+    "commit": "d61192f9e9a2432ab317b0e579a4894e657707f6"
   },
   "ristretto": {
     "repository": "https://github.com/Nobrac/Ristretto",
-    "commit": "c6404d80195454dcb982820fcbb45a7fbb584025",
+    "commit": "b0236d703d98d2f8d15aee0eac200f58dc1c19e4",
     "doppioSubmodule": {
       "repository": "https://github.com/Nobrac/Doppio",
       "commit": "37a827d19f741b671054020f01c5bb8a40efe706"
