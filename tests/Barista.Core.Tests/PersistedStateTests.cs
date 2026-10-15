@@ -153,14 +153,28 @@ public class PersistedStateTests
         record.CompletedStages = [StageId.Provider, StageId.Enrollment];
         record.AwaitingVerificationOf = StageId.Enrollment;
         record.Log = "line one\nline two";
-        record.LauncherPath = @"C:\Barista\Barista.exe";
 
         var back = RoundTrip(record);
 
         Assert.Equal(new[] { StageId.Provider, StageId.Enrollment }, back.CompletedStages);
         Assert.Equal(StageId.Enrollment, back.AwaitingVerificationOf);
         Assert.Equal("line one\nline two", back.Log);
-        Assert.Equal(@"C:\Barista\Barista.exe", back.LauncherPath);
         Assert.Equal(record.StartedUtc, back.StartedUtc);
+    }
+
+    [Fact]
+    public void A_launcher_path_in_an_older_record_is_read_past_and_not_kept()
+    {
+        // Older versions stored the exe path and armed RunOnce with it on the
+        // next save. The record lives in ProgramData, and HKLM RunOnce starts
+        // whatever it names as administrator, so the path is no longer read.
+        var json = StateStore.Serialize(PersistedState.From(AnInstall()))
+            .Replace("\"Log\"", "\"LauncherPath\": \"C:\\\\Users\\\\Public\\\\evil.exe\",\n  \"Log\"");
+        Assert.Contains("LauncherPath", json);
+
+        var back = StateStore.Deserialize(json);
+
+        Assert.NotNull(back);
+        Assert.DoesNotContain("LauncherPath", StateStore.Serialize(back!));
     }
 }

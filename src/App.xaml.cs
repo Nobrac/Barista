@@ -126,7 +126,7 @@ public partial class App : Application
         var saved = "";
         try
         {
-            Directory.CreateDirectory(StateStore.Folder);
+            StateStore.EnsureFolder();
             var entry = new StringBuilder()
                 .AppendLine(new string('-', 70))
                 .AppendLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss}  fatal={fatal}")
