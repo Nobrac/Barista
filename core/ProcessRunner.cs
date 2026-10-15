@@ -93,7 +93,7 @@ public static class ProcessRunner
             // arrive either from a git clone or unpacked from a bundle, and
             // neither carries a signature. The alternative is telling every user
             // to loosen the machine-wide policy, which is worse.
-            FileName = "powershell.exe",
+            FileName = SystemTools.PowerShell,
             WorkingDirectory = Path.GetDirectoryName(scriptPath) ?? Environment.CurrentDirectory,
             UseShellExecute = false,
             CreateNoWindow = true,
@@ -139,7 +139,7 @@ public static class ProcessRunner
 
         var psi = new ProcessStartInfo
         {
-            FileName = "reg.exe",
+            FileName = SystemTools.Reg,
             WorkingDirectory = Path.GetDirectoryName(regFilePath) ?? Environment.CurrentDirectory,
             UseShellExecute = false,
             CreateNoWindow = true,

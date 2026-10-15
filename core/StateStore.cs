@@ -60,9 +60,6 @@ public sealed class PersistedState
 
     public DateTime StartedUtc { get; set; } = DateTime.UtcNow;
 
-    /// <summary>Where the exe was when it saved this, for the RunOnce entry.</summary>
-    public string? LauncherPath { get; set; }
-
     /// <summary>
     /// The choices to carry on with.
     ///
@@ -107,6 +104,14 @@ public static class StateStore
         "TheAdminCafe", "Barista");
 
     public static string FilePath => Path.Combine(Folder, "pending-run.json");
+
+    /// <summary>
+    /// Creates the folder, or takes an existing one over, with an ACL only
+    /// SYSTEM and Administrators can change. See <see cref="ProtectedFolder.Lock"/>:
+    /// without it, any user could pre-create the folder and leave a record
+    /// here for the elevated wizard to resume from.
+    /// </summary>
+    public static void EnsureFolder() => ProtectedFolder.Lock(Folder);
 
     private static readonly JsonSerializerOptions Json = new()
     {
@@ -155,6 +160,8 @@ public static class StateStore
     {
         try
         {
+            if (!Directory.Exists(Folder)) return null;
+            EnsureFolder();
             if (!File.Exists(FilePath)) return null;
 
             var state = Deserialize(File.ReadAllText(FilePath));
@@ -195,11 +202,12 @@ public static class StateStore
     /// </summary>
     public static void Save(PersistedState state, bool armRunOnce)
     {
-        Directory.CreateDirectory(Folder);
-        state.LauncherPath ??= Environment.ProcessPath;
+        EnsureFolder();
         File.WriteAllText(FilePath, Serialize(state));
 
-        if (armRunOnce) ArmRunOnce(state.LauncherPath);
+        // The exe that is running now, never a path read back from the record:
+        // RunOnce under HKLM starts it as administrator at the next logon.
+        if (armRunOnce) ArmRunOnce(Environment.ProcessPath);
     }
 
     private static void ArmRunOnce(string? exePath)
@@ -246,7 +254,7 @@ public static class StateStore
     {
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
         {
-            FileName = "shutdown.exe",
+            FileName = SystemTools.Shutdown,
             ArgumentList = { "/r", "/t", "5", "/c", "Barista: continuing after the restart." },
             UseShellExecute = false,
             CreateNoWindow = true,

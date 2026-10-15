@@ -19,7 +19,8 @@ public partial class DonePage : UserControl, IWizardPage
 
     public bool CanAdvance => true;
 
-    public event EventHandler? AdvanceAvailabilityChanged;
+    // CanAdvance never changes on this page, so there is nothing to raise.
+    public event EventHandler? AdvanceAvailabilityChanged { add { } remove { } }
 
     public void OnEntering(SetupState state)
     {

@@ -139,7 +139,7 @@ public static class BuildRunner
         {
             var psi = new ProcessStartInfo
             {
-                FileName = "cmd.exe",
+                FileName = SystemTools.Cmd,
                 WorkingDirectory = workingDir,
                 UseShellExecute = false,
                 CreateNoWindow = true,

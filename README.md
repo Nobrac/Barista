@@ -189,7 +189,9 @@ Two independent mechanisms:
   else, so closing the window after it lost the fact that it had run — and the
   next start then re-ran `enroll.exe` for an account that already had a secret.
   Only a pending reboot arms `RunOnce`, so nothing opens by itself unless
-  something is actually waiting.
+  something is actually waiting. The folder gets an ACL only SYSTEM and
+  Administrators can change, also when someone created it first, and files
+  in it that neither of them owns are deleted before anything is read.
 - `HKLM\...\CurrentVersion\RunOnce` — convenience, so the window opens after
   the next logon. It deletes its own value as it fires, so nothing lingers if
   you never continue.

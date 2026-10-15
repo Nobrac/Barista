@@ -20,7 +20,7 @@ jobs:
   release:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Read the pins and the version
         id: pins
@@ -37,14 +37,14 @@ jobs:
 
       # The two repositories at exactly their pins. persist-credentials off:
       # nothing in this job pushes to them.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           repository: Nobrac/Doppio
           ref: ${{ steps.pins.outputs.doppio }}
           path: Doppio
           persist-credentials: false
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           repository: Nobrac/Ristretto
           ref: ${{ steps.pins.outputs.ristretto }}
@@ -52,7 +52,7 @@ jobs:
           submodules: recursive
           persist-credentials: false
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
 
@@ -101,7 +101,7 @@ jobs:
           [IO.File]::WriteAllLines("$out/SHA256SUMS", $lines)
           Get-Content "$out/SHA256SUMS"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: barista-standalone-${{ steps.pins.outputs.version }}
           path: |
