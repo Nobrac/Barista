@@ -420,15 +420,17 @@ public static class InstallPlan
                 Path.Combine(ristretto, "uninstall-ristretto.ps1"),
                 [],
                 StepKind.Script));
+
+            // uninstall-ristretto.ps1 puts back whatever held Auth0 before.
+            // When that was Doppio's TacSubAuth, the slot is not empty after
+            // the step above, and enrolled accounts would stay locked out of
+            // network logons until somebody ran the uninstall a second time.
+            if (Preflight.RistrettoPrevAuth0() == "TacSubAuth" && doppio.Length > 0)
+                steps.Add(SubAuthUninstallStep(doppio));
         }
         else if (auth0 == "TacSubAuth" && doppio.Length > 0)
         {
-            steps.Add(new Step(
-                "Remove Doppio's sub-authentication filter",
-                "Clears the Auth0 registration.",
-                Path.Combine(doppio, "uninstall-subauth.ps1"),
-                [],
-                StepKind.Script));
+            steps.Add(SubAuthUninstallStep(doppio));
         }
 
         // --- 2. the authentication package ----------------------------------
@@ -483,4 +485,11 @@ public static class InstallPlan
 
         return steps;
     }
+
+    private static Step SubAuthUninstallStep(string doppio) => new(
+        "Remove Doppio's sub-authentication filter",
+        "Clears the Auth0 registration.",
+        Path.Combine(doppio, "uninstall-subauth.ps1"),
+        [],
+        StepKind.Script);
 }

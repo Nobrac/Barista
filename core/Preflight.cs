@@ -168,15 +168,16 @@ public static class Preflight
     private static bool? LsassProtectedSinceBoot()
     {
         // The provider filter matters: event ID 12 is used by several sources.
-        // The message match on top of it is this tool's own addition - WinInit
-        // logs other ID 12 events, and a false "protected" here would block an
-        // install for no reason.
+        // No match on the message text: it is localized, so a filter on the
+        // English "protected process" read every non-English Windows as clear
+        // while lsass ran protected. This is now the exact query the install
+        // scripts run, so the page and the stage cannot disagree.
         const string script = """
             $ErrorActionPreference = 'SilentlyContinue'
             $boot = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime
             if (-not $boot) { 'UNKNOWN'; exit }
             $e = Get-WinEvent -FilterHashtable @{ LogName = 'System'; Id = 12; StartTime = $boot } |
-                 Where-Object { $_.ProviderName -like '*Wininit*' -and $_.Message -like '*protected process*' } |
+                 Where-Object { $_.ProviderName -like '*Wininit*' } |
                  Select-Object -First 1
             if ($e) { 'PROTECTED' } else { 'CLEAR' }
             """;
@@ -234,6 +235,14 @@ public static class Preflight
 
     public static string? CurrentAuth0()
         => Registry.LocalMachine.OpenSubKey(MsvKey)?.GetValue("Auth0") as string;
+
+    /// <summary>
+    /// What install-ristretto.ps1 recorded as the Auth0 holder before it took
+    /// the slot, and what uninstall-ristretto.ps1 will put back. Null when
+    /// there is no record.
+    /// </summary>
+    public static string? RistrettoPrevAuth0()
+        => Registry.LocalMachine.OpenSubKey(RistrettoKey)?.GetValue("PrevAuth0") as string;
 
     public static bool DoppioInstalled()
         => File.Exists(Path.Combine(InstallDir, "TacProvider.dll"));
@@ -371,7 +380,10 @@ public static class Preflight
                 FileName = SystemTools.PowerShell,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
-                RedirectStandardError = true,
+                // Not redirected: only stdout is read below, and a redirected
+                // stderr nobody drains fills its pipe, blocks the child and
+                // with it the ReadLine loop, before WaitForExit can time out.
+                RedirectStandardError = false,
                 CreateNoWindow = true,
             };
             p.StartInfo.ArgumentList.Add("-NoProfile");
