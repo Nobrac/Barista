@@ -5,10 +5,10 @@
   },
   "ristretto": {
     "repository": "https://github.com/Nobrac/Ristretto",
-    "commit": "b0236d703d98d2f8d15aee0eac200f58dc1c19e4",
+    "commit": "069fb230960565993b8fd48f386095817d3a0524",
     "doppioSubmodule": {
       "repository": "https://github.com/Nobrac/Doppio",
-      "commit": "37a827d19f741b671054020f01c5bb8a40efe706"
+      "commit": "d61192f9e9a2432ab317b0e579a4894e657707f6"
     }
   }
 }
